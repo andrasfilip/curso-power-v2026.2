@@ -18,14 +18,12 @@ It takes about **3–4 minutes** to finish. No installation, just click the link
 
 ## What is in this repository
 
-The materials come in two formats so you can use whichever suits the moment:
+The materials come in two formats:
 
 - **Conceptual slides** (PDF, Spanish) in `slides/` — the big-picture
   introduction we project during the live sessions.
 - **Handouts** (long-form, self-contained HTML, one per course part) in
-  `scripts/` — these are the **primary deliverable** for self-study. They
-  include the full prose, all code, tabsets to compare alternative
-  approaches, and stay open without an internet connection.
+  `scripts/` — these are the **primary deliverable** for self-study. 
 
 There is one handout per course part (Parts 1, 1.2, 2–9), one practical
 exercise paired with Part 1, and a **Part 0 R primer** for participants
@@ -113,7 +111,6 @@ quarto render "scripts/1. Introduction and between-subject design - handout.qmd"
 
 All paths inside the `.qmd` files are relative to the project root:
 
-- Images: `img/for_loop.png`, `img/bivariate_normal.jpg`, `img/plot_*.png`
 - Data: `data/raw_data/ldt_data.csv`
 - Precomputed RData: `data/processed_data/power_grid_*.RData`
 
