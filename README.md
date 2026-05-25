@@ -18,91 +18,107 @@ It takes about **3–4 minutes** to finish. No installation, just click the link
 
 ## What is in this repository
 
-The materials are produced in two parallel formats:
+The materials come in two formats so you can use whichever suits the moment:
 
-- **Slide decks** (RevealJS) — for the live sessions.
-- **Handouts** (long-form HTML) — for self-study, with full prose and tabsets.
+- **Conceptual slides** (PDF, Spanish) in `slides/` — the big-picture
+  introduction we project during the live sessions.
+- **Handouts** (long-form, self-contained HTML, one per course part) in
+  `scripts/` — these are the **primary deliverable** for self-study. They
+  include the full prose, all code, tabsets to compare alternative
+  approaches, and stay open without an internet connection.
 
-Each of the nine course parts (1, 1.2, 2–9) has both a slide deck and a
-handout. There is also one practical exercise paired with Part 1, and a
-**Part 0 R primer** for participants who do not use R regularly.
+There is one handout per course part (Parts 1, 1.2, 2–9), one practical
+exercise paired with Part 1, and a **Part 0 R primer** for participants
+who do not use R regularly.
 
 ## Folder structure
 
 ```
 curso-power-v2026.2/
 ├── _simulations_final.Rproj  RStudio project (open this first)
-├── custom.css                shared CSS for the Quarto slide decks
+├── README.md                 this file
 ├── data/
 │   ├── raw_data/             read-only data (ldt_data.csv)
-│   └── processed_data/       precomputed power grids (.RData)
-├── img/                      shared figures + logos used in slides and handouts
-├── slides/                   conceptual deck (Spanish): .pptx + .pdf
-└── scripts/                  source code + rendered handouts
-    └── *.qmd                 10 slide decks + 10 handouts + 1 exercise + Part 0 primer
+│   └── processed_data/       precomputed power grids
+│                             (power_grid_2d.RData, power_grid_sub_eff.RData)
+├── img/                      figures + logos used by the handouts
+├── slides/                   conceptual decks (Spanish)
+│   ├── 01_SLIDES_SUPERPOWER.pdf
+│   ├── 02_SLIDES_SIMULACIONES_v2.pdf
+│   └── 02_SLIDES_SIMULACIONES_v2.pptx
+└── scripts/                  Quarto sources + rendered handouts
+    ├── 0. Basic R primer.qmd / .html
+    ├── 1. Introduction and between-subject design - handout.qmd / .html
+    ├── 1.2 Between-subjects design and linear modeling - handout.qmd / .html
+    ├── ... (Parts 2–9 follow the same pattern)
+    └── Exercise_1_Power_Simulation_Between_Subjects.qmd / .html
 ```
+
+The repository does **not** include the Exercise 1 solutions, the
+`_archive/` folder, or the helper visualization scripts — these will be
+shared separately. See `.gitignore` for the full exclusion list.
 
 ## Course parts (intended order)
 
-| Part | Topic | Slide deck | Handout |
-|------|-------|------------|---------|
-| 0    | R básico — primer for those new to R | — | ✓ |
-| 1    | Introduction & between-subjects design | ✓ | ✓ |
-| 1.2  | Between-subjects design & linear modeling | ✓ | ✓ |
-| 2    | Within-subjects design & linear modeling | ✓ | ✓ |
-| 3    | Repeated measures | ✓ | ✓ |
-| 4    | By-participant adjustments to the slope | ✓ | ✓ |
-| 5    | Correlated slopes and intercepts | ✓ | ✓ |
-| 6    | By-item varying intercepts | ✓ | ✓ |
-| 7    | Modeling reaction time data (log-normal) | ✓ | ✓ |
-| 8    | Power analysis across varying sample sizes and effect sizes | ✓ | ✓ |
-| 9    | Recap — generative formulas and `gendat_*()` functions | ✓ | ✓ |
+| Part | Topic |
+|------|-------|
+| 0    | R básico — primer for those new to R |
+| 1    | Introduction & between-subjects design |
+| 1.2  | Between-subjects design & linear modeling |
+| 2    | Within-subjects design & linear modeling |
+| 3    | Repeated measures |
+| 4    | By-participant adjustments to the slope |
+| 5    | Correlated slopes and intercepts |
+| 6    | By-item varying intercepts |
+| 7    | Modeling reaction time data (log-normal) |
+| 8    | Power analysis across varying sample sizes and effect sizes |
+| 9    | Recap — generative formulas and `gendat_*()` functions |
 
 Exercise: `Exercise_1_Power_Simulation_Between_Subjects.qmd` is paired with
-Part 1. Try it first, then check
-`Exercise_1_Power_Simulation_Between_Subjects_solutions.qmd` for the worked
-answers.
+Part 1. The worked-solutions file (`..._solutions.qmd`) is not in the repo
+yet — it will be added after the live session.
 
 ## Required R packages
+
+To run the code in the handouts you will need:
 
 ```r
 install.packages(c("tictoc", "MASS", "lme4", "lmerTest", "ggplot2",
                    "rio", "performance", "ggdist", "dplyr"))
 ```
 
-## Rendering
+Part 0 (the R primer) needs only base R.
 
-Open `_simulations_final.Rproj` in RStudio first — it sets the working
-directory to the project root automatically and the relative paths below
-will work.
+## Just want to read the materials?
 
-Render a single QMD from the scripts folder:
+Open any of the `scripts/*- handout.html` files in a web browser. They are
+**self-contained** (`embed-resources: true`), so the single `.html` file
+carries everything it needs — no images folder, no internet connection,
+no Quarto install. You can also email them to a colleague as-is.
+
+## Want to run the code yourself?
+
+1. Clone this repository (or download it as a ZIP from GitHub).
+2. Open `_simulations_final.Rproj` in RStudio. The working directory is
+   set to the project root automatically, so all relative paths
+   (`data/raw_data/ldt_data.csv`, `img/for_loop.png`, etc.) just work.
+3. Open any `.qmd` file from `scripts/` and run the chunks interactively,
+   or re-render the whole handout:
 
 ```bash
-quarto render "scripts/1. Introduction and between-subject design.qmd"
+quarto render "scripts/1. Introduction and between-subject design - handout.qmd"
 ```
 
-Render everything at once:
+## How the paths work (for those who edit the source)
 
-```bash
-./render_all.sh
-```
-
-## How the paths work
-
-All paths are relative to the project root (`_simulations final/`):
+All paths inside the `.qmd` files are relative to the project root:
 
 - Images: `img/for_loop.png`, `img/bivariate_normal.jpg`, `img/plot_*.png`
 - Data: `data/raw_data/ldt_data.csv`
 - Precomputed RData: `data/processed_data/power_grid_*.RData`
-- CSS: `../custom.css` (one level up from `scripts/`)
 
-When you render a QMD with `quarto render scripts/<file>.qmd`, the resulting
-HTML and `*_files/` folder are written next to the QMD inside `scripts/`.
-This is intentional: the relative paths in the rendered HTML
-(`../img/...`, `../data/...`) only resolve correctly when the HTML stays at
-that level.
-
-The contents of `output/slides/` and `output/exercises/` are the frozen
-deliverables from earlier renders; fresh renders overwrite the HTML in
-`scripts/`.
+When you render a handout with `quarto render scripts/<file>.qmd`, the
+rendered HTML appears next to the QMD inside `scripts/`. The handouts are
+**self-contained** (`embed-resources: true`), so the single `.html` file
+carries all the images and data it needs — nothing else is required to
+share it.
