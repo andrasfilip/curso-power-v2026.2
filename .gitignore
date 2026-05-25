@@ -1,0 +1,84 @@
+# =====================================================================
+# .gitignore for curso-power-v2026.2
+#
+# Keep in the repo:
+#   - All .qmd source files (slides + handouts + exercises + Part 0 primer)
+#   - All rendered HANDOUT and EXERCISE HTMLs (self-contained,
+#     embed-resources: true, so they need no _files/ sidecar)
+#   - The slides/ folder (PowerPoint + PDF of the conceptual deck)
+#   - data/, img/, custom.css, README.md, _simulations_final.Rproj
+#
+# Ignore everything else.
+# =====================================================================
+
+# ---------------------------------------------------------------------
+# Rendered RevealJS slide decks (10 files matching the course parts)
+# ---------------------------------------------------------------------
+# These depend on their *_files/ sidecars to render. Since we ignore
+# the sidecars below, the slide HTMLs would be broken anyway.
+# Participants who want the RevealJS slides should `quarto render` the
+# .qmd source locally. The conceptual PPTX/PDF deck in slides/ is the
+# primary slide deliverable.
+scripts/1. Introduction and between-subject design.html
+scripts/1.2 Between-subjects design and linear modeling.html
+scripts/2. Within-subject design and linear modeling.html
+scripts/3. Repeated measures.html
+scripts/4. By-participant adjustments to the slope.html
+scripts/5. Correlated slopes and intercepts.html
+scripts/6. By-item varying intercepts.html
+scripts/7. Modeling reaction time data.html
+scripts/8. Power analysis across varying sample sizes and effect sizes.html
+scripts/9. Recap.html
+
+# ---------------------------------------------------------------------
+# Quarto sidecar folders (libs, figures generated at render time)
+# ---------------------------------------------------------------------
+# Handouts are self-contained, so they don't need these.
+# Slide-deck _files/ are needed at runtime but the slide HTMLs are
+# excluded above, so the sidecars are dead weight too.
+*_files/
+
+# ---------------------------------------------------------------------
+# Quarto cache
+# ---------------------------------------------------------------------
+.quarto/
+
+# ---------------------------------------------------------------------
+# Helper scripts and folders that are not for participants
+# ---------------------------------------------------------------------
+render_all.sh
+_archive/
+scripts/demos/
+scripts/visualizations/
+output/
+
+# ---------------------------------------------------------------------
+# Exercise 1 solutions (not yet shared with students)
+# ---------------------------------------------------------------------
+# Remove these two lines when you are ready to publish the worked answers.
+scripts/Exercise_1_Power_Simulation_Between_Subjects_solutions.qmd
+scripts/Exercise_1_Power_Simulation_Between_Subjects_solutions.html
+
+# ---------------------------------------------------------------------
+# RStudio / IDE
+# ---------------------------------------------------------------------
+.Rproj.user/
+.Rhistory
+.RData
+.Ruserdata
+
+# ---------------------------------------------------------------------
+# macOS / Linux / editor junk
+# ---------------------------------------------------------------------
+.DS_Store
+Thumbs.db
+*~
+*.swp
+*.swo
+.vscode/
+.idea/
+
+# ---------------------------------------------------------------------
+# Office lock files (appear while a .pptx/.docx/.xlsx is open)
+# ---------------------------------------------------------------------
+~$*

@@ -1,0 +1,352 @@
+---
+title: "Simulation-Based Power Analysis"
+subtitle: "Part 9: Recap — generative formulas and gendat functions across Parts 1-8"
+author:
+  - name: "Filip Andras, David López-García & David Sánchez Casasola"
+    affiliations:
+      - name: "Centro de Investigación Mente Cerebro y Comportamiento (CIMCYC), Universidad de Granada"
+date: "26 May 2026"
+date-format: "D MMMM YYYY"
+format:
+  revealjs:
+    theme: serif
+    css: ../custom.css
+    slide-number: true
+    chalkboard: true
+    code-fold: false
+    code-overflow: wrap
+    scrollable: true
+    footer: "Justificación del tamaño muestral y análisis de potencia estadística | v2026.2"
+execute:
+  warning: false
+  message: false
+---
+
+## Part 9: Recap — what we built across Parts 1-8
+
+```{r}
+#| label: setup
+#| echo: false
+#| eval: true
+
+suppressPackageStartupMessages({
+  library(tictoc)
+  library(MASS)
+  library(lme4)
+  library(lmerTest)
+  library(ggplot2)
+})
+
+options(scipen = 999)
+options(width = 120)
+set.seed(42)
+```
+
+::: incremental
+- Each part added **one new piece** to the data-generating process.
+- The R function (`gendat_*()`) grew alongside the formula.
+- This recap lays them side by side via tabsets — pick a part, see the formula and the code.
+:::
+
+## Overview
+
+| Part | New ingredient | Function |
+|------|----------------|----------|
+| 1    | Between-subjects design, t-test | `betwsubj_simdat_ldt()` |
+| 1.2  | Linear model (same data) | `betwsubj_simdat_ldt()` |
+| 2    | Within-subjects + random intercept ($u_{0i}$) | `withinsubj_simdat()` |
+| 3    | Multiple trials per cell | (inline) |
+| 4    | Random slope ($u_{1i}$) | `gendat_ldt()` |
+| 5    | Correlated $u_{0i}, u_{1i}$ via $\rho$ | `gendat_ldt_corr()` |
+| 6    | Item random intercept ($w_{0j}$) | `gendat_ldt_crossed()` |
+| 7    | Log-normal RT | `gendat_ldt_crossed_log()` |
+| 8    | Iterate over power grids | (same generator) |
+
+## Generative formulas {background-color="#43464B"}
+
+## Generative formulas {.smaller}
+
+::: panel-tabset
+
+### Part 1
+
+**Between-subjects, independent observations:**
+
+$$rt_i = \mu_c + \varepsilon_i$$
+
+with $\mu_c$ = condition mean (700 or 750 ms) and $\varepsilon_i \sim N(0, 200)$.
+
+### Part 1.2
+
+**Same data, linear-model parametrisation (effects coding):**
+
+$$rt_i = \beta_0 + \beta_1 \cdot \text{cond.cod}_i + \varepsilon_i$$
+
+with $\beta_0 = 725$, $\beta_1 = 50$, $\varepsilon_i \sim N(0, 200)$.
+
+### Part 2
+
+**Within-subjects + random intercept:**
+
+$$rt_{ij} = \beta_0 + u_{0i} + \beta_1 \cdot \text{cond.cod}_{ij} + \varepsilon_{ij}$$
+
+with $u_{0i} \sim N(0, 150)$.
+
+### Part 3
+
+**Multiple trials per cell (same formula, more rows):**
+
+$$rt_{ijk} = \beta_0 + u_{0i} + \beta_1 \cdot \text{cond.cod}_{ij} + \varepsilon_{ijk}$$
+
+$k$ trials per (subject, condition).
+
+### Part 4
+
+**+ random slope:**
+
+$$rt_{ij} = \beta_0 + u_{0i} + (\beta_1 + u_{1i}) \cdot \text{cond.cod}_{ij} + \varepsilon_{ij}$$
+
+with $u_{1i} \sim N(0, 20)$, independent of $u_{0i}$.
+
+### Part 5
+
+**Correlated random intercepts and slopes:**
+
+$$rt_{ij} = \beta_0 + u_{0i} + (\beta_1 + u_{1i}) \cdot \text{cond.cod}_{ij} + \varepsilon_{ij}$$
+
+$$\begin{pmatrix} u_0 \\ u_1 \end{pmatrix} \sim \text{MVN}\left( \mathbf{0}, \, \Sigma_u \right), \quad \Sigma_u = \begin{pmatrix} \sigma_{u0}^2 & \rho \, \sigma_{u0} \sigma_{u1} \\ \rho \, \sigma_{u0} \sigma_{u1} & \sigma_{u1}^2 \end{pmatrix}$$
+
+### Part 6
+
+**+ fully crossed design with item random intercept:**
+
+$$rt_{ij} = \beta_0 + u_{0i} + w_{0j} + (\beta_1 + u_{1i}) \cdot \text{cond.cod}_{ij} + \varepsilon_{ij}$$
+
+with $w_{0j} \sim N(0, \sigma_w)$. Item index $j$ now varies independently of subject index $i$.
+
+### Part 7
+
+**Log-normal RT (positive, right-skewed):**
+
+$$\log(rt_{ij}) = \beta_0 + u_{0i} + w_{0j} + (\beta_1 + u_{1i}) \cdot \text{cond.cod}_{ij} + \varepsilon_{ij}$$
+
+All parameters now on the **log scale**. Back-transform with `exp()`.
+
+### Part 8
+
+**Same generator as Part 7, iterated over a grid:**
+
+For each $(n, b_1)$ (first grid) or $(n, k)$ (second grid) combination:
+
+- Generate `nsim` datasets with the Part 7 process.
+- Fit the LMM and extract the $p$-value.
+- Power = proportion of $p < 0.05$.
+
+:::
+
+## Generator functions {background-color="#43464B"}
+
+## Generator functions {.smaller}
+
+::: panel-tabset
+
+### Part 1 / 1.2
+
+```r
+betwsubj_simdat_ldt <- function(n = 10,
+                                mean_freq_high = 700,
+                                mean_freq_low  = 750,
+                                stdev     = 200) {
+  freq_high <- rnorm(n, mean = mean_freq_high, sd = stdev)
+  freq_low  <- rnorm(n, mean = mean_freq_low,  sd = stdev)
+  subj      <- 1:(2 * n)
+  cond      <- factor(rep(c("freq_high", "freq_low"), each = n))
+  cond.cod  <- ifelse(cond == "freq_high", -0.5, 0.5)
+  data.frame(subj = subj, cond = cond, cond.cod = cond.cod,
+             rt = c(freq_high, freq_low))
+}
+```
+
+### Part 2
+
+```r
+withinsubj_simdat <- function(n = 10,
+                              b0 = 725,
+                              b1 = 50,
+                              sigma_u0 = 150,
+                              sigma = 200) {
+  u0       <- round(rnorm(n, mean = 0, sd = sigma_u0))
+  cond.cod <- rep(c(-0.5, 0.5), each = n)
+  subj     <- rep(1:n, times = 2)
+  rt <- round(b0 +
+              rep(u0, times = 2) +
+              b1 * cond.cod +
+              rnorm(2 * n, mean = 0, sd = sigma))
+  data.frame(subj = subj, cond.cod = cond.cod, rt = rt)
+}
+```
+
+### Part 3
+
+**Inline (no wrapper) — extends Part 2 by repeating each subject `k` times:**
+
+```r
+n <- 20  # subjects
+k <- 20  # trials per condition
+
+cond.cod <- rep(c(-0.5, 0.5), each = n * k)
+subj     <- rep(rep(1:n, each = k), times = 2)
+sim_dat  <- data.frame(subj = subj, cond.cod = cond.cod)
+
+sim_dat$rt <- 725 +
+              rep(rep(round(rnorm(n, 0, 150)), each = k), 2) +
+              50 * cond.cod +
+              rnorm(n * k * 2, 0, 200)
+```
+
+### Part 4
+
+```r
+gendat_ldt <- function(n = 20, k = 20,
+                       b0 = 725, b1 = 50,
+                       sigma_u0 = 150, sigma_u1 = 20,
+                       sigma = 200) {
+  u <- data.frame(subject = 1:n,
+                  u0 = rnorm(n, 0, sigma_u0),
+                  u1 = rnorm(n, 0, sigma_u1))
+  cond.cod <- rep(c(-0.5, 0.5), each = n * k)
+  subj     <- rep(rep(1:n, each = k), times = 2)
+  sim_dat  <- data.frame(subj = subj, cond.cod = cond.cod)
+  nrows <- dim(sim_dat)[1]
+  rt    <- rep(NA, nrows)
+  for (i in 1:nrows) {
+    rt[i] <- b0 +
+             u[sim_dat[i, ]$subj, ]$u0 +
+             (b1 + u[sim_dat[i, ]$subj, ]$u1) * sim_dat[i, ]$cond.cod +
+             rnorm(1, 0, sigma)
+  }
+  sim_dat$rt <- rt
+  sim_dat
+}
+```
+
+### Part 5
+
+```r
+gendat_ldt_corr <- function(n = 20, k = 20,
+                            b0 = 725, b1 = 50,
+                            sigma_u0 = 150, sigma_u1 = 20,
+                            rho = -0.5,            # NEW
+                            sigma = 200) {
+  Sigma <- matrix(c(sigma_u0^2,                  sigma_u0 * sigma_u1 * rho,
+                    sigma_u0 * sigma_u1 * rho,   sigma_u1^2), ncol = 2)
+  u <- as.data.frame(mvrnorm(n = n, mu = c(0, 0), Sigma = Sigma))
+  colnames(u) <- c("u0", "u1"); u$subject <- 1:n
+  cond.cod <- rep(c(-0.5, 0.5), each = n * k)
+  subj     <- rep(rep(1:n, each = k), times = 2)
+  sim_dat  <- data.frame(subj = subj, cond.cod = cond.cod)
+  nrows <- dim(sim_dat)[1]; rt <- rep(NA, nrows)
+  for (i in 1:nrows) {
+    rt[i] <- b0 + u[sim_dat[i, ]$subj, ]$u0 +
+             (b1 + u[sim_dat[i, ]$subj, ]$u1) * sim_dat[i, ]$cond.cod +
+             rnorm(1, 0, sigma)
+  }
+  sim_dat$rt <- rt; sim_dat
+}
+```
+
+### Part 6
+
+```r
+gendat_ldt_crossed <- function(n = 20, k = 20,
+                               b0 = 725, b1 = 50,
+                               sigma_u0 = 150, sigma_u1 = 20, rho = -0.5,
+                               sigma_w = 100,         # NEW: item SD
+                               sigma = 200) {
+  sim_dat          <- expand.grid(item = 1:(k*2), subj = 1:n)    # fully crossed
+  sim_dat$cond.cod <- rep(c(-0.5, 0.5), each = k)
+  Sigma_u <- matrix(c(sigma_u0^2,                  rho * sigma_u0 * sigma_u1,
+                      rho * sigma_u0 * sigma_u1,   sigma_u1^2), nrow = 2)
+  u <- mvrnorm(n = length(unique(sim_dat$subj)), mu = c(0, 0), Sigma = Sigma_u)
+  w <- rnorm(n = length(unique(sim_dat$item)), mean = 0, sd = sigma_w)
+  N <- dim(sim_dat)[1]; rt <- rep(NA, N)
+  for (i in 1:N) {
+    rt[i] <- rnorm(1,
+                   b0 + u[sim_dat[i, ]$subj, 1] + w[sim_dat[i, ]$item] +
+                   (b1 + u[sim_dat[i, ]$subj, 2]) * sim_dat[i, ]$cond.cod,
+                   sigma)
+  }
+  sim_dat$rt <- rt
+  sim_dat$subj <- factor(sim_dat$subj); sim_dat$item <- factor(sim_dat$item)
+  sim_dat
+}
+```
+
+### Part 7
+
+```r
+gendat_ldt_crossed_log <- function(n = 20, k = 20,
+                                   b0 = 6.59,            # log scale
+                                   b1 = 0.10,            # log scale
+                                   sigma_u0 = 0.2, sigma_u1 = 0.02, rho = -0.5,
+                                   sigma_w = 0.1,
+                                   sigma = 0.25) {       # all on log scale
+  sim_dat          <- expand.grid(item = 1:(k*2), subj = 1:n)
+  sim_dat$cond.cod <- rep(c(-0.5, 0.5), each = k)
+  Sigma_u <- matrix(c(sigma_u0^2,                  rho * sigma_u0 * sigma_u1,
+                      rho * sigma_u0 * sigma_u1,   sigma_u1^2), nrow = 2)
+  u <- mvrnorm(n = length(unique(sim_dat$subj)), mu = c(0, 0), Sigma = Sigma_u)
+  w <- rnorm(n = length(unique(sim_dat$item)), mean = 0, sd = sigma_w)
+  N <- dim(sim_dat)[1]; rt <- rep(NA, N)
+  for (i in 1:N) {
+    rt[i] <- rlnorm(1,                       # rlnorm() not rnorm()
+                    b0 + u[sim_dat[i, ]$subj, 1] + w[sim_dat[i, ]$item] +
+                    (b1 + u[sim_dat[i, ]$subj, 2]) * sim_dat[i, ]$cond.cod,
+                    sigma)
+  }
+  sim_dat$rt <- rt
+  sim_dat$subj <- factor(sim_dat$subj); sim_dat$item <- factor(sim_dat$item)
+  sim_dat
+}
+```
+
+### Part 8
+
+**Same generator as Part 7. The new code is the nested grid loop:**
+
+```r
+# 1D grid (subjects x effect):
+for (row in 1:nrow(power_grid)) {
+  n_subj <- power_grid$n[row]
+  effect <- power_grid$b1[row]
+  pvals  <- rep(NA, nsim)
+  for (i in 1:nsim) {
+    sim_dat <- gendat_ldt_crossed_log(n = n_subj, k = n_item, b1 = effect, ...)
+    m <- lmer(log(rt) ~ cond.cod + (1 + cond.cod | subj) + (1 | item), sim_dat)
+    pvals[i] <- summary(m)$coefficients[2, 5]
+  }
+  power_grid$power[row] <- mean(pvals < 0.05)
+}
+```
+
+:::
+
+## Summary
+
+::: incremental
+- Each new ingredient is **additive**: every formula above contains all the previous ones inside.
+- The function names track the cumulative complexity: `gendat_ldt` → `_corr` → `_crossed` → `_crossed_log`.
+- The corresponding `lmer()` formula also grows: starting from `lm(rt ~ cond.cod)` and ending at `lmer(log(rt) ~ cond.cod + (1 + cond.cod | subj) + (1 | item))`.
+:::
+
+## Preguntas? {background-color="#43464B"}
+
+## Session information {.smaller}
+
+```{r}
+#| label: session-info
+#| echo: false
+#| eval: true
+
+sessionInfo()
+```

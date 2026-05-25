@@ -1,0 +1,344 @@
+---
+title: "Simulation-Based Power Analysis"
+subtitle: "Part 6: Fully crossed design and by-item varying intercepts — Handout"
+author:
+  - name: "Filip Andras, David López-García & David Sánchez Casasola"
+    affiliations:
+      - name: "Centro de Investigación Mente Cerebro y Comportamiento (CIMCYC), Universidad de Granada"
+date: "26 May 2026"
+date-format: "D MMMM YYYY"
+format:
+  html:
+    theme: cosmo
+    toc: true
+    toc-location: left
+    toc-depth: 3
+    embed-resources: true
+    code-fold: false
+    code-overflow: wrap
+    code-tools: false
+    fig-align: center
+    number-sections: true
+    page-layout: full
+    include-in-header:
+      - text: |
+          <style>
+            pre { white-space: pre-wrap; word-wrap: break-word; }
+            .quarto-title-block { max-width: 1200px; margin: auto; padding: 0 2em; }
+            main, #quarto-document-content { max-width: 1200px; margin: auto; padding: 0 2em; }
+            h2 { margin-top: 2em; }
+            h3 { margin-top: 1.5em; }
+            #TOC, #quarto-margin-sidebar { width: 250px; }
+          </style>
+execute:
+  warning: false
+  message: false
+---
+
+```{r}
+#| label: setup
+#| echo: false
+#| eval: true
+
+# load packages (suppress startup messages from lme4, lmerTest, etc.)
+suppressPackageStartupMessages({
+  library(tictoc)
+  library(MASS)
+  library(lme4)
+  library(lmerTest)
+  library(ggplot2)
+})
+
+options(scipen = 999) # prevents scientific notation
+options(width = 120)  # wider console output for HTML rendering
+set.seed(42)          # set seed for reproducibility
+```
+
+# Why by-item random intercepts?
+
+So far we have modelled variability between **subjects**: some people are
+faster, some slower, some show a bigger lexical-frequency effect, others a
+smaller one.
+
+But the **items** (the actual words in our LDT example) also come with their
+own variability. Words are sampled from a pool of possible items. Each word has
+its own baseline RT: *table* might be responded to consistently faster than
+*xylophone*, regardless of who is reading.
+
+To make the simulation realistic, we add **by-item adjustments to the
+intercept**.
+
+# Fully crossed designs
+
+A second important structural feature: in this example each word is seen by
+**every subject**. This is called a **fully crossed design**. Every (subject,
+item) cell of the design matrix has at least one observation.
+
+Two consequences:
+
+- The data are not independent in two different ways: responses to the same
+  item are correlated (across subjects), and responses from the same subject
+  are correlated (across items).
+- A traditional analysis would have run two ANOVAs — one averaged over
+  subjects (called $F_1$) and one averaged over items ($F_2$). Linear mixed
+  models replace both with a single model that includes both sources of
+  variability.
+
+The LMM formula notation for the item random intercept is `(1 | item)`, exactly
+parallel to `(1 | subj)` for subjects.
+
+# Building the crossed design
+
+We use `expand.grid()` to generate every combination of `item` and `subj`:
+
+```{r}
+#| label: build-crossed-design
+#| echo: true
+#| eval: true
+
+n <- 20  # subjects
+k <- 20  # 20 items per condition (so 40 items total)
+
+# fully crossed design: each subject sees all items
+sim_dat <- expand.grid(item = 1:(k * 2), subj = 1:n)
+
+# assign items to conditions (first k items are high frequency, next k are low)
+sim_dat$cond.cod <- rep(c(-0.5, 0.5), each = k)
+
+head(sim_dat)
+```
+
+Sanity check — every subject sees every item exactly once:
+
+```{r}
+#| label: xtabs-subj-by-item
+#| echo: true
+#| eval: true
+
+head(xtabs(~ subj + item, data = sim_dat))
+```
+
+Each cell contains a 1, confirming the fully crossed structure.
+
+# Generating by-item adjustments
+
+By-item adjustments are drawn from a normal distribution centred on zero, the
+same way we did for subjects. A reasonable starting value is $\sigma_w = 100$:
+
+```{r}
+#| label: generate-item-intercepts-w
+#| echo: true
+#| eval: true
+
+sigma_w <- 100   # SD of item random intercepts
+
+# one adjustment per unique item:
+w <- rnorm(n = length(unique(sim_dat$item)), mean = 0, sd = sigma_w)
+w
+```
+
+There is one value per item. We will look it up by item id during data
+generation, the same way we looked up subject adjustments in Part 4.
+
+# Extended generative formula
+
+The full generative formula now includes both a subject and an item random
+intercept:
+
+$$
+rt_{ij} = \beta_0 + u_{0i} + w_{0j} + (\beta_1 + u_{1i}) \times \text{cond.cod}_{ij} + \varepsilon_{ij}
+$$
+
+with:
+
+- $u_{0i} \sim \text{Normal}(0, \sigma_{u0})$ — by-subject intercept
+- $u_{1i} \sim \text{Normal}(0, \sigma_{u1})$ — by-subject slope (correlated with $u_{0i}$)
+- $w_{0j} \sim \text{Normal}(0, \sigma_w)$ — by-item intercept (the new term)
+- $\varepsilon_{ij} \sim \text{Normal}(0, \sigma)$ — residual error
+
+The model fits this with: `rt ~ cond.cod + (1 + cond.cod | subj) + (1 | item)`.
+
+# A function for the full crossed design
+
+We extend Part 5's generator one more time with the item random intercept:
+
+```{r}
+#| label: define-gendat-ldt-crossed
+#| echo: true
+#| eval: true
+
+gendat_ldt_crossed <- function(n        = 20,    # subjects
+                               k        = 20,    # items per condition
+                               b0       = 725,   # grand mean
+                               b1       = 50,    # frequency effect
+                               sigma_u0 = 150,   # SD of subject intercepts
+                               sigma_u1 = 20,    # SD of subject slopes
+                               rho      = -0.5,  # correlation between subject intercepts and slopes
+                               sigma_w  = 100,   # SD of item intercepts (new)
+                               sigma    = 200) { # residual SD
+
+  # fully crossed design
+  sim_dat          <- expand.grid(item = 1:(k * 2), subj = 1:n)
+  sim_dat$cond.cod <- rep(c(-0.5, 0.5), each = k)
+
+  # subject random effects: correlated intercepts and slopes
+  Sigma_u <- matrix(c(sigma_u0^2,                  rho * sigma_u0 * sigma_u1,
+                      rho * sigma_u0 * sigma_u1,   sigma_u1^2),
+                    nrow = 2)
+  u <- mvrnorm(n     = length(unique(sim_dat$subj)),
+               mu    = c(0, 0),
+               Sigma = Sigma_u)
+
+  # item random effects: intercepts only
+  w <- rnorm(n = length(unique(sim_dat$item)), mean = 0, sd = sigma_w)
+
+  # generate RTs row by row
+  N  <- dim(sim_dat)[1]
+  rt <- rep(NA, N)
+  for (i in 1:N) {
+    rt[i] <- rnorm(1,
+                   b0 +
+                   u[sim_dat[i, ]$subj, 1] +       # subject intercept
+                   w[sim_dat[i, ]$item] +          # item intercept (new)
+                   (b1 + u[sim_dat[i, ]$subj, 2]) * sim_dat[i, ]$cond.cod,
+                   sigma)
+  }
+
+  sim_dat$rt   <- rt
+  sim_dat$subj <- factor(sim_dat$subj)
+  sim_dat$item <- factor(sim_dat$item)
+  sim_dat
+}
+```
+
+The two new lines compared to Part 5: the `rnorm()` call that generates `w`,
+and the `w[sim_dat[i, ]$item]` lookup inside the loop.
+
+# Testing the function
+
+Generate one dataset and inspect its structure:
+
+```{r}
+#| label: test-gendat-ldt-crossed
+#| echo: true
+#| eval: true
+
+sim_dat <- gendat_ldt_crossed(n = 20, k = 20)
+dim(sim_dat) # 20 subjects x 40 items = 800 observations
+```
+
+The first 41 rows show a single subject's data — 40 trials (20 per condition):
+
+```{r}
+#| label: head-sim-dat-crossed
+#| echo: true
+#| eval: true
+
+head(sim_dat, 41)
+```
+
+## Verifying the fully crossed structure
+
+Each subject sees 20 items per condition:
+
+```{r}
+#| label: verify-subj-by-cond
+#| echo: true
+#| eval: true
+
+xtabs(~ subj + cond.cod, data = sim_dat)
+```
+
+Each item is responded to by all 20 subjects:
+
+```{r}
+#| label: verify-cond-by-item
+#| echo: true
+#| eval: true
+
+xtabs(~ cond.cod + item, data = sim_dat)
+```
+
+Exactly one observation per (subject, item) pair:
+
+```{r}
+#| label: verify-subj-by-item
+#| echo: true
+#| eval: true
+
+xtabs(~ subj + item, data = sim_dat)
+```
+
+# What do the simulated RTs look like?
+
+Generate a larger dataset (64 subjects, 40 items per condition) and plot the
+histogram:
+
+```{r}
+#| label: fig-hist-simulated-rt-normal
+#| echo: true
+#| eval: true
+#| fig-cap: "Histogram of simulated RTs from the fully crossed design. Notice the symmetric, normal-like distribution — which is unrealistic for real RT data."
+
+sim_dat <- gendat_ldt_crossed(n = 64, k = 40)
+hist(sim_dat$rt, breaks = 30,
+     main = "Histogram of simulated RTs",
+     xlab = "Reaction Time (ms)")
+```
+
+::: callout-warning
+**Look closely at the distribution.** It is roughly symmetric and bell-shaped.
+But real reaction times are **right-skewed** — there is a hard lower bound
+(motor response cannot be faster than ~150 ms) and a long right tail (occasional
+very slow trials).
+
+The Gaussian generative process produces RTs that can even go *negative* for
+extreme outliers, which is impossible in reality. Part 7 fixes this by
+switching to a **log-normal** distribution for the RTs.
+:::
+
+# Summary and next step
+
+In this part we:
+
+- Added **by-item random intercepts** as a third random effect.
+- Recognised that **fully crossed designs** carry dependency from both subjects
+  and items, which is naturally handled by `(1 | subj) + (1 | item)` in the LMM.
+- Extended the data-generating function to `gendat_ldt_crossed()` with
+  $\sigma_w$ as a new parameter.
+- Verified the design is fully crossed.
+- Noted that Gaussian-generated RTs are unrealistically symmetric.
+
+The current generative process is now:
+
+$$
+rt_{ij} = \beta_0 + u_{0i} + w_{0j} + (\beta_1 + u_{1i}) \times \text{cond.cod}_{ij} + \varepsilon_{ij}
+$$
+
+with $\varepsilon_{ij} \sim \text{Normal}(0, \sigma)$,
+
+$$
+\begin{pmatrix} u_0 \\ u_1 \end{pmatrix} \sim \text{MVN} \left(
+\begin{pmatrix} 0 \\ 0 \end{pmatrix}, \, \Sigma_u \right), \quad
+\Sigma_u = \begin{pmatrix}
+\sigma_{u0}^2 & \rho \, \sigma_{u0} \sigma_{u1} \\
+\rho \, \sigma_{u0} \sigma_{u1} & \sigma_{u1}^2
+\end{pmatrix},
+$$
+
+and $w_0 \sim \text{Normal}(0, \sigma_w)$.
+
+The next part of the course models **$\log(rt)$ instead of $rt$**, which both
+ensures positive reaction times and captures the right-skewed shape of
+real RT distributions.
+
+# Session information
+
+```{r}
+#| label: session-info
+#| echo: false
+#| eval: true
+#| code-fold: true
+
+sessionInfo()
+```

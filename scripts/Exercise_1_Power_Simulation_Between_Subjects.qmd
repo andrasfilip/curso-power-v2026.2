@@ -1,0 +1,255 @@
+---
+title: "Exercise 1: Power Simulation for Between-Subject Design"
+subtitle: "From Part 1: Introduction to simulations and between-subject design"
+author:
+  - name: "Filip Andras, David López-García & David Sánchez Casasola"
+    affiliations:
+      - name: "Centro de Investigación Mente Cerebro y Comportamiento (CIMCYC), Universidad de Granada"
+date: "26 May 2026"
+date-format: "D MMMM YYYY"
+format:
+  html:
+    theme: cosmo
+    toc: true
+    toc-location: left
+    toc-depth: 3
+    embed-resources: true
+    code-fold: false
+    code-overflow: wrap
+    code-tools: false
+    fig-align: center
+    number-sections: true
+    page-layout: full
+    include-in-header:
+      - text: |
+          <style>
+            pre { white-space: pre-wrap; word-wrap: break-word; }
+            .quarto-title-block { max-width: 1200px; margin: auto; padding: 0 2em; }
+            main, #quarto-document-content { max-width: 1200px; margin: auto; padding: 0 2em; }
+            h2 { margin-top: 2em; }
+            h3 { margin-top: 1.5em; }
+            #TOC, #quarto-margin-sidebar { width: 250px; }
+          </style>
+execute:
+  warning: false
+  message: false
+editor: visual
+---
+
+# Setup
+
+First, load the required packages:
+
+```{r}
+#| label: setup
+#| echo: true
+#| eval: true
+
+suppressPackageStartupMessages({
+  library(tictoc)
+})
+
+options(scipen = 999) # prevents scientific notation
+options(width = 120)  # wider console output for HTML rendering
+set.seed(42)          # set seed for reproducibility
+```
+
+# The data generation function
+
+This function generates simulated data for a between-subjects lexical decision
+task. We use it throughout the exercise:
+
+```{r}
+#| label: define-betwsubj-simdat-ldt
+#| echo: true
+#| eval: true
+
+betwsubj_simdat_ldt <- function(n = 10,
+                                mean_freq_high = 700,
+                                mean_freq_low = 750,
+                                stdev = 200) {
+  # generate data:
+  freq_high <- rnorm(n, mean = mean_freq_high, sd = stdev)
+  freq_low  <- rnorm(n, mean = mean_freq_low,  sd = stdev)
+
+  subj <- 1:(2 * n)
+  cond <- factor(rep(c("freq_high", "freq_low"), each = n))
+  cond.cod <- ifelse(cond == "freq_high", -0.5, 0.5)
+
+  # put it together:
+  sim_dat <- data.frame(
+    subj = subj,
+    cond = cond,
+    cond.cod = cond.cod,
+    rt = c(freq_high, freq_low)
+  )
+}
+```
+
+# Exercise instructions
+
+Your goal: find the sample size per group that gives you **at least 80%
+power** for each of the three scenarios below.
+
+The template chunk in each tab below contains a simulation loop. **Change the
+value of `n`** (and only `n`) until the printed power is at least **0.80**.
+The means and the standard deviation are pre-filled per question.
+
+# Questions to answer
+
+1. **Δ = 50 ms, SD = 200 ms**: how many subjects per group?
+2. **Δ = 30 ms, SD = 200 ms** (a smaller effect): how many subjects per group?
+3. **Δ = 50 ms, SD = 100 ms** (half the noise): how many subjects per group?
+
+## Number of simulations
+
+Set this once — it is shared by all three questions below:
+
+```{r}
+#| label: exercise-nsim
+#| echo: true
+#| eval: true
+
+nsim <- 1000  # number of simulations per estimate
+```
+
+## Your turn
+
+In each tab below, **only the line `n <- 10` is meant to change**. The
+design constants (`mean_freq_high`, `mean_freq_low`, `stdev`) are fixed by
+the question. The simulation loop is the same template in every tab — leave
+it untouched.
+
+::: panel-tabset
+
+### Q1 (Δ=50, SD=200)
+
+```{r}
+#| label: exercise-q1-design
+#| echo: true
+#| eval: false
+
+# Fixed by the question — leave as is:
+mean_freq_high <- 700   # high-frequency words
+mean_freq_low  <- 750   # low-frequency words (50 ms slower)
+stdev          <- 200
+```
+
+```{r}
+#| label: exercise-q1
+#| echo: true
+#| eval: false
+
+n <- 10   # <-- CHANGE ONLY THIS until power is at least 0.80
+
+# Simulation loop (same template in every question — leave untouched):
+pvals <- rep(NA, nsim)
+tic()
+for (i in 1:nsim) {
+  sim_dat  <- betwsubj_simdat_ldt(n              = n,
+                                  mean_freq_high = mean_freq_high,
+                                  mean_freq_low  = mean_freq_low,
+                                  stdev          = stdev)
+  pvals[i] <- t.test(rt ~ cond.cod, data = sim_dat)$p.value
+}
+toc()
+
+# proportion of significant simulations = estimated power
+round(mean(pvals < 0.05), 3)
+```
+
+### Q2 (Δ=30, SD=200)
+
+```{r}
+#| label: exercise-q2-design
+#| echo: true
+#| eval: false
+
+# Fixed by the question — leave as is:
+mean_freq_high <- 700
+mean_freq_low  <- 730   # 30 ms difference (smaller effect)
+stdev          <- 200
+```
+
+```{r}
+#| label: exercise-q2
+#| echo: true
+#| eval: false
+
+n <- 10   # <-- CHANGE ONLY THIS until power is at least 0.80
+
+# Simulation loop (same template — leave untouched):
+pvals <- rep(NA, nsim)
+tic()
+for (i in 1:nsim) {
+  sim_dat  <- betwsubj_simdat_ldt(n              = n,
+                                  mean_freq_high = mean_freq_high,
+                                  mean_freq_low  = mean_freq_low,
+                                  stdev          = stdev)
+  pvals[i] <- t.test(rt ~ cond.cod, data = sim_dat)$p.value
+}
+toc()
+
+round(mean(pvals < 0.05), 3)
+```
+
+### Q3 (Δ=50, SD=100)
+
+```{r}
+#| label: exercise-q3-design
+#| echo: true
+#| eval: false
+
+# Fixed by the question — leave as is:
+mean_freq_high <- 700
+mean_freq_low  <- 750
+stdev          <- 100   # half the noise
+```
+
+```{r}
+#| label: exercise-q3
+#| echo: true
+#| eval: false
+
+n <- 10   # <-- CHANGE ONLY THIS until power is at least 0.80
+
+# Simulation loop (same template — leave untouched):
+pvals <- rep(NA, nsim)
+tic()
+for (i in 1:nsim) {
+  sim_dat  <- betwsubj_simdat_ldt(n              = n,
+                                  mean_freq_high = mean_freq_high,
+                                  mean_freq_low  = mean_freq_low,
+                                  stdev          = stdev)
+  pvals[i] <- t.test(rt ~ cond.cod, data = sim_dat)$p.value
+}
+toc()
+
+round(mean(pvals < 0.05), 3)
+```
+
+:::
+
+::: callout-tip
+**Strategy.** Start with `n = 10` and roughly double it each time you do not
+reach 80% power. Once you overshoot, narrow down. You should converge in
+3-4 tries per question.
+:::
+
+::: callout-note
+The worked solutions live in a separate document:
+**`Exercise_1_Power_Simulation_Between_Subjects_solutions.qmd`**. Try the
+questions first — your answers will be more useful than reading the
+solutions cold.
+:::
+
+# Session information
+
+```{r}
+#| label: session-info
+#| echo: false
+#| eval: true
+#| code-fold: true
+
+sessionInfo()
+```

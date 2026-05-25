@@ -1,0 +1,466 @@
+---
+title: "Simulation-Based Power Analysis"
+subtitle: "Part 7: Modeling reaction time data — log-normal distribution — Handout"
+author:
+  - name: "Filip Andras, David López-García & David Sánchez Casasola"
+    affiliations:
+      - name: "Centro de Investigación Mente Cerebro y Comportamiento (CIMCYC), Universidad de Granada"
+date: "26 May 2026"
+date-format: "D MMMM YYYY"
+format:
+  html:
+    theme: cosmo
+    toc: true
+    toc-location: left
+    toc-depth: 3
+    embed-resources: true
+    code-fold: false
+    code-overflow: wrap
+    code-tools: false
+    fig-align: center
+    number-sections: true
+    page-layout: full
+    include-in-header:
+      - text: |
+          <style>
+            pre { white-space: pre-wrap; word-wrap: break-word; }
+            .quarto-title-block { max-width: 1200px; margin: auto; padding: 0 2em; }
+            main, #quarto-document-content { max-width: 1200px; margin: auto; padding: 0 2em; }
+            h2 { margin-top: 2em; }
+            h3 { margin-top: 1.5em; }
+            #TOC, #quarto-margin-sidebar { width: 250px; }
+          </style>
+execute:
+  warning: false
+  message: false
+---
+
+```{r}
+#| label: setup
+#| echo: false
+#| eval: true
+
+# load packages (suppress startup messages from lme4, lmerTest, etc.)
+suppressPackageStartupMessages({
+  library(tictoc)
+  library(MASS)
+  library(lme4)
+  library(lmerTest)
+  library(ggplot2)
+})
+
+options(scipen = 999) # prevents scientific notation
+options(width = 120)  # wider console output for HTML rendering
+set.seed(42)          # set seed for reproducibility
+```
+
+# The shape of real reaction times
+
+Part 6 left us with a Gaussian-distributed RT that is symmetric and bell-shaped.
+Real reaction times are not like that. They are **right-skewed**: there is a
+hard physical lower bound (motor response cannot be faster than ~150-200 ms) and
+a long tail of slow trials.
+
+A common way to model right-skewed positive data is the **log-normal
+distribution**: if $\log(\text{RT})$ is normally distributed, then RT itself is
+log-normal and strictly positive.
+
+This part of the course:
+
+- Compares Gaussian and log-normal models on **real LDT data**.
+- Builds a generator that produces log-normal RTs.
+- Discusses how to **back-transform** effects from the log scale to the
+  millisecond scale.
+- Runs a power analysis and a Type-I error check.
+
+# Real LDT data
+
+Load a real LDT dataset (the same one used in Filip's PhD work):
+
+```{r}
+#| label: load-ldt-data
+#| echo: true
+#| eval: true
+
+library(rio)
+dat <- import("../data/raw_data/ldt_data.csv")
+head(dat)
+```
+
+The dataset has one row per trial, with columns for subject, stimulus,
+condition (`wrd_freq.cod`), and RT in milliseconds.
+
+# Fitting the model: Gaussian vs log-normal
+
+We compare two models on the same data: one assumes RT is normally
+distributed, the other models $\log(\text{RT})$. Click between the tabs to
+compare the model output and the diagnostic panels.
+
+::: panel-tabset
+
+## Gaussian (raw RT)
+
+```{r}
+#| label: lmer-normal-rt
+#| echo: true
+#| eval: true
+
+m <- lmer(RT ~ wrd_freq.cod + (1 + wrd_freq.cod | subject) + (1 | stimuli),
+          data = dat)
+summary(m)
+```
+
+`performance::check_model()` produces a diagnostic panel for the model
+assumptions:
+
+```{r}
+#| label: fig-check-model-normal
+#| echo: true
+#| eval: true
+#| fig-width: 9
+#| fig-height: 9
+#| fig-cap: "Model diagnostics for RT modeled as Gaussian. Note the strong departure from normality in the QQ plot and the heteroscedasticity in the residuals-vs-fitted plot."
+
+performance::check_model(m)
+```
+
+The QQ plot of residuals shows strong departure from normality in the upper
+tail, and the residuals-vs-fitted plot shows heteroscedasticity (the variance
+increases with the fitted value). Both are typical signatures of right-skewed
+data.
+
+## Log-normal (log(RT))
+
+```{r}
+#| label: lmer-log-rt
+#| echo: true
+#| eval: true
+
+m_log <- lmer(log(RT) ~ wrd_freq.cod + (1 + wrd_freq.cod | subject) + (1 | stimuli),
+              data = dat)
+summary(m_log)
+```
+
+Same diagnostic panel for the log-transformed model:
+
+```{r}
+#| label: fig-check-model-log
+#| echo: true
+#| eval: true
+#| fig-width: 9
+#| fig-height: 9
+#| fig-cap: "Model diagnostics for log(RT). The QQ plot is much closer to the diagonal and the residual variance is more stable across fitted values."
+
+performance::check_model(m_log)
+```
+
+The QQ plot is now much closer to the diagonal and the residual variance is
+more uniform. This is a substantial improvement.
+
+:::
+
+The log-normal model wins on both diagnostic criteria. From here on the
+course commits to modelling $\log(\text{RT})$ and the simulation generator
+switches from `rnorm()` to `rlnorm()`.
+
+# Back to the millisecond scale
+
+Fitting on the log scale costs us interpretability: the coefficients are no
+longer in milliseconds. To recover ms-scale effects we back-transform with
+`exp()`.
+
+With the fitted coefficients $b_0 = 6.59$, $b_1 = 0.10$ and $\text{SE}(b_1) =
+0.02$:
+
+```{r}
+#| label: backtransform-all
+#| echo: true
+#| eval: true
+#| code-fold: true
+#| code-summary: "Show code (back-transform + 95% CI)"
+
+b0        <- 6.59
+b1        <- 0.10
+b1_stderr <- 0.02
+
+# point estimate
+rt_high <- exp(b0 + b1 * -0.5)
+rt_low  <- exp(b0 + b1 *  0.5)
+effect  <- rt_low - rt_high
+
+# 95% CI on b1 (log scale), then back-transform
+lower <- b1 - 1.96 * b1_stderr
+upper <- b1 + 1.96 * b1_stderr
+
+effect_lower <- exp(b0 + lower * 0.5) - exp(b0 + lower * -0.5)
+effect_upper <- exp(b0 + upper * 0.5) - exp(b0 + upper * -0.5)
+
+c(rt_high      = rt_high,
+  rt_low       = rt_low,
+  effect_ms    = effect,
+  effect_lower = effect_lower,
+  effect_upper = effect_upper)
+```
+
+Two takeaways:
+
+- The point estimate is a **~70 ms effect**, but this is conditional on the
+  baseline RT being around 730 ms. The same log-scale effect ($b_1 = 0.10$)
+  implies a different ms-scale effect at different baselines. **This is the
+  most important practical consequence of log-scale modelling.**
+- The 95% CI on the ms scale spans roughly **40 to 100 ms** — substantial
+  uncertainty, worth keeping in mind when interpreting the point estimate.
+
+::: callout-tip
+In Bayesian terms, $b_1 \sim \text{Normal}(0.10, 0.02)$. The back-transformed
+range above corresponds to a 95% credible interval on the ms-scale effect.
+:::
+
+# Generating log-normal RTs
+
+To run a power analysis on this model, we need a data generator that produces
+**log-normal** RTs. The only changes from Part 6's `gendat_ldt_crossed()`:
+
+- All parameters are now on the **log scale** (so smaller numbers).
+- `rnorm()` becomes `rlnorm()` inside the row-by-row loop.
+
+```{r}
+#| label: define-gendat-ldt-crossed-log
+#| echo: true
+#| eval: true
+
+gendat_ldt_crossed_log <- function(n        = 20,    # subjects
+                                   k        = 20,    # items per condition
+                                   b0       = 6.59,  # log(grand mean RT); exp(6.59) ~ 730 ms
+                                   b1       = 0.10,  # log-scale frequency effect (~70 ms on RT scale)
+                                   sigma_u0 = 0.2,   # SD of subject intercepts (log)
+                                   sigma_u1 = 0.02,  # SD of subject slopes (log)
+                                   rho      = -0.5,  # correlation between subject intercepts and slopes
+                                   sigma_w  = 0.1,   # SD of item intercepts (log)
+                                   sigma    = 0.25) {# residual SD (log)
+
+  # fully crossed design
+  sim_dat          <- expand.grid(item = 1:(k * 2), subj = 1:n)
+  sim_dat$cond.cod <- rep(c(-0.5, 0.5), each = k)
+
+  # subject random effects (correlated intercepts and slopes)
+  Sigma_u <- matrix(c(sigma_u0^2,                  rho * sigma_u0 * sigma_u1,
+                      rho * sigma_u0 * sigma_u1,   sigma_u1^2),
+                    nrow = 2)
+  u <- mvrnorm(n     = length(unique(sim_dat$subj)),
+               mu    = c(0, 0),
+               Sigma = Sigma_u)
+
+  # item random effects (intercepts only)
+  w <- rnorm(n = length(unique(sim_dat$item)), mean = 0, sd = sigma_w)
+
+  # generate RTs row by row -- note rlnorm() instead of rnorm()
+  N  <- dim(sim_dat)[1]
+  rt <- rep(NA, N)
+  for (i in 1:N) {
+    rt[i] <- rlnorm(1,
+                    b0 +
+                    u[sim_dat[i, ]$subj, 1] +
+                    w[sim_dat[i, ]$item] +
+                    (b1 + u[sim_dat[i, ]$subj, 2]) * sim_dat[i, ]$cond.cod,
+                    sigma)
+  }
+
+  sim_dat$rt   <- rt
+  sim_dat$subj <- factor(sim_dat$subj)
+  sim_dat$item <- factor(sim_dat$item)
+  sim_dat
+}
+```
+
+Check that the resulting distribution is right-skewed:
+
+```{r}
+#| label: fig-hist-lognormal-rt
+#| echo: true
+#| eval: true
+#| fig-cap: "Distribution of simulated RTs from the log-normal generator. The right-skewed shape matches what we see in real RT data."
+
+sim_dat <- gendat_ldt_crossed_log(n = 100, k = 100)
+hist(sim_dat$rt,
+     main = "Distribution of Simulated RTs (Log-Normal)",
+     xlab = "RT (ms)", col = "lightblue", breaks = 50)
+```
+
+Compare with the Gaussian histogram from Part 6 — the log-normal version has
+the characteristic right tail and a hard zero lower bound.
+
+# Sanity check on the log-normal model
+
+Fit the same log(rt) model on simulated data to confirm the generator and the
+model agree:
+
+```{r}
+#| label: lmer-lognormal-sanity
+#| echo: true
+#| eval: true
+
+sim_dat <- gendat_ldt_crossed_log(n = 20, k = 20)
+
+m <- lmer(log(rt) ~ cond.cod + (1 + cond.cod | subj) + (1 | item), sim_dat,
+          control = lmerControl(calc.derivs = FALSE))
+summary(m)
+```
+
+The fixed-effect estimates should be close to the generating values (6.59 and
+0.10).
+
+# Power analysis
+
+With the log-normal generator in hand, the power loop is identical in shape to
+the previous parts — only the simulator and model formula change:
+
+```{r}
+#| label: power-simulation-lognormal
+#| echo: true
+#| eval: true
+
+nsim  <- 1000
+pvals <- rep(NA, nsim)
+
+for (i in 1:nsim) {
+  sim_dat <- gendat_ldt_crossed_log(n = 20, k = 20,
+                                    b0 = 6.59, b1 = 0.10,
+                                    sigma_u0 = 0.2, sigma_u1 = 0.02,
+                                    rho = -0.5, sigma_w = 0.1, sigma = 0.25)
+
+  m <- lmer(log(rt) ~ cond.cod + (1 + cond.cod | subj) + (1 | item), sim_dat,
+            control = lmerControl(calc.derivs = FALSE))
+  pvals[i] <- summary(m)$coefficients[2, 5]
+}
+
+power <- round(mean(pvals < 0.05), digits = 4)
+power
+```
+
+# Parameter recovery (seven parameters now)
+
+With the addition of $\sigma_w$ and $\rho$ on top of the standard four
+parameters, we now have **seven** parameters to recover:
+
+```{r}
+#| label: parameter-recovery-lognormal
+#| echo: true
+#| eval: true
+
+nsim   <- 1000
+params <- matrix(rep(NA, nsim * 7), ncol = 7)
+
+for (i in 1:nsim) {
+  sim_dat <- gendat_ldt_crossed_log(n = 20, k = 20,
+                                    b0 = 6.59, b1 = 0.10,
+                                    sigma_u0 = 0.2, sigma_u1 = 0.02,
+                                    rho = -0.5, sigma_w = 0.1, sigma = 0.25)
+  m <- lmer(log(rt) ~ cond.cod + (1 + cond.cod | subj) + (1 | item), sim_dat,
+            control = lmerControl(calc.derivs = FALSE))
+
+  params[i, 1] <- summary(m)$coefficients[1, 1] # b0
+  params[i, 2] <- summary(m)$coefficients[2, 1] # b1
+  params[i, 3] <- attr(VarCorr(m), "sc")        # residual SD
+  vc           <- as.data.frame(VarCorr(m))
+  params[i, 4] <- vc$sdcor[1]                   # SD item intercepts
+  params[i, 5] <- vc$sdcor[2]                   # SD subject slopes
+  params[i, 6] <- vc$sdcor[3]                   # SD subject intercepts
+  params[i, 7] <- vc$sdcor[4]                   # rho (subj intercept-slope correlation)
+}
+```
+
+```{r}
+#| label: fig-parameter-recovery-lognormal
+#| echo: false
+#| eval: true
+#| fig-width: 10
+#| fig-height: 8
+#| fig-cap: "Parameter recovery for the log-normal model with n = 20, k = 20, 1000 simulations. Red lines mark the true generating values."
+
+op <- par(mfrow = c(3, 4), pty = "s")
+hist(params[, 1], main = "b0 (Intercept)",           col = "lightblue"); abline(v = 6.59,  col = "red", lwd = 2)
+hist(params[, 2], main = "b1 (Effect)",              col = "lightblue"); abline(v = 0.10,  col = "red", lwd = 2)
+hist(params[, 3], main = "sigma (Residuals)",        col = "lightblue"); abline(v = 0.25,  col = "red", lwd = 2)
+hist(params[, 4], main = "sigma_w (Item Intercepts)",col = "lightblue"); abline(v = 0.10,  col = "red", lwd = 2)
+hist(params[, 5], main = "sigma_u1 (Subj Slopes)",   col = "lightblue"); abline(v = 0.02,  col = "red", lwd = 2)
+hist(params[, 6], main = "sigma_u0 (Subj Intercepts)",col= "lightblue"); abline(v = 0.20,  col = "red", lwd = 2)
+hist(params[, 7], main = "rho (Correlation)",        col = "lightblue"); abline(v = -0.50, col = "red", lwd = 2)
+par(op)
+```
+
+The fixed effects and large variance components recover cleanly. The
+correlation $\rho$ is still the noisiest parameter, as we saw in Part 5.
+
+# Type-I error check
+
+A useful sanity check on any new generative process: when the true effect is
+**zero**, what proportion of simulations falsely declare significance? The
+answer should be approximately $\alpha = 0.05$.
+
+```{r}
+#| label: type1-error-rate-check
+#| echo: true
+#| eval: true
+
+nsim  <- 1000
+pvals <- rep(NA, nsim)
+
+for (i in 1:nsim) {
+  sim_dat <- gendat_ldt_crossed_log(n = 20, k = 20,
+                                    b0 = 6.59, b1 = 0,         # NO EFFECT
+                                    sigma_u0 = 0.2, sigma_u1 = 0.0, # no slope variability
+                                    rho = 0.0, sigma_w = 0.1, sigma = 0.25)
+
+  m <- lmer(log(rt) ~ cond.cod + (1 + cond.cod | subj) + (1 | item), sim_dat,
+            control = lmerControl(calc.derivs = FALSE))
+  pvals[i] <- summary(m)$coefficients[2, 5]
+}
+
+type1_error <- mean(pvals < 0.05)
+type1_error
+```
+
+If the value is close to 0.05, the model and the generative process are
+consistent. Substantially higher would suggest the inference is anti-
+conservative; substantially lower, the model is conservative.
+
+# Summary and next step
+
+In this part we:
+
+- Recognised that real RTs are right-skewed and not well-described by a Gaussian.
+- Fit `log(RT)` instead of `RT` to obtain better-behaved residuals.
+- Walked through the back-transformation from log(ms) to ms and showed that the
+  ms-scale effect depends on the baseline RT.
+- Built `gendat_ldt_crossed_log()` to simulate from a log-normal generative
+  process.
+- Verified power, parameter recovery, and the Type-I error rate.
+
+::: callout-tip
+For an interactive comparison of RT distributions (log-normal, ex-Gaussian,
+shifted log-normal, etc.), see Jonas K. Lindeløv's
+[shiny app](https://lindeloev.shinyapps.io/shiny-rt/).
+:::
+
+The final form of the data-generating process is:
+
+$$
+\log(rt_{ij}) = \beta_0 + u_{0i} + w_{0j} + (\beta_1 + u_{1i}) \times \text{cond.cod}_{ij} + \varepsilon_{ij}
+$$
+
+The next (final) part of the course **iterates the power analysis across a grid
+of sample sizes and effect sizes**, with confidence intervals on each estimate.
+This is the standard deliverable for a sample-size justification in a research
+proposal or pre-registration.
+
+# Session information
+
+```{r}
+#| label: session-info
+#| echo: false
+#| eval: true
+#| code-fold: true
+
+sessionInfo()
+```

@@ -1,0 +1,455 @@
+---
+title: "Simulation-Based Power Analysis"
+subtitle: "Part 9: Recap — generative formulas and gendat functions across Parts 1-8 — Handout"
+author:
+  - name: "Filip Andras, David López-García & David Sánchez Casasola"
+    affiliations:
+      - name: "Centro de Investigación Mente Cerebro y Comportamiento (CIMCYC), Universidad de Granada"
+date: "26 May 2026"
+date-format: "D MMMM YYYY"
+format:
+  html:
+    theme: cosmo
+    toc: true
+    toc-location: left
+    toc-depth: 3
+    embed-resources: true
+    code-fold: false
+    code-overflow: wrap
+    code-tools: false
+    fig-align: center
+    number-sections: true
+    page-layout: full
+    include-in-header:
+      - text: |
+          <style>
+            pre { white-space: pre-wrap; word-wrap: break-word; }
+            .quarto-title-block { max-width: 1200px; margin: auto; padding: 0 2em; }
+            main, #quarto-document-content { max-width: 1200px; margin: auto; padding: 0 2em; }
+            h2 { margin-top: 2em; }
+            h3 { margin-top: 1.5em; }
+            #TOC, #quarto-margin-sidebar { width: 250px; }
+          </style>
+execute:
+  warning: false
+  message: false
+---
+
+```{r}
+#| label: setup
+#| echo: false
+#| eval: true
+
+suppressPackageStartupMessages({
+  library(tictoc)
+  library(MASS)
+  library(lme4)
+  library(lmerTest)
+  library(ggplot2)
+})
+
+options(scipen = 999)
+options(width = 120)
+set.seed(42)
+```
+
+# What we built across Parts 1-8
+
+Each part of the course added **one new piece** to the data-generating process,
+and the corresponding R function (`gendat_*()`) grew alongside the formula.
+
+This recap lays the formulas and the generator functions side by side using
+tabsets. Pick a part in either tabset to see what was new at that step.
+
+# Overview
+
+The table below maps each part to the new modelling ingredient it introduced
+and to the function that implements it:
+
+| Part | New ingredient | Function |
+|------|----------------|----------|
+| 1    | Between-subjects design, t-test | `betwsubj_simdat_ldt()` |
+| 1.2  | Linear-model parametrisation (same data) | `betwsubj_simdat_ldt()` |
+| 2    | Within-subjects + random intercept ($u_{0i}$) | `withinsubj_simdat()` |
+| 3    | Multiple trials per cell | (inline, no wrapper) |
+| 4    | Random slope ($u_{1i}$) | `gendat_ldt()` |
+| 5    | Correlated $u_{0i}, u_{1i}$ via $\rho$ | `gendat_ldt_corr()` |
+| 6    | Item random intercept ($w_{0j}$), fully crossed design | `gendat_ldt_crossed()` |
+| 7    | Log-normal RT | `gendat_ldt_crossed_log()` |
+| 8    | Iterate the Part 7 generator over a grid | (same generator) |
+
+The next two tabsets show the generative formula and the function side by side
+for each part.
+
+# Generative formulas
+
+::: panel-tabset
+
+## Part 1
+
+**Between-subjects, independent observations:**
+
+$$rt_i = \mu_c + \varepsilon_i$$
+
+where $\mu_c$ is the condition mean (700 or 750 ms) and
+$\varepsilon_i \sim N(0, 200)$. There is no random structure across observations
+— each $rt$ depends only on which group the subject was assigned to.
+
+## Part 1.2
+
+**Same data, linear-model parametrisation (effects coding):**
+
+$$rt_i = \beta_0 + \beta_1 \cdot \text{cond.cod}_i + \varepsilon_i$$
+
+with $\beta_0 = 725$ (grand mean), $\beta_1 = 50$ (full difference between
+conditions), and $\varepsilon_i \sim N(0, 200)$.
+
+Nothing changes in the data — only how we parametrise it for `lm()`.
+
+## Part 2
+
+**Within-subjects + random intercept:**
+
+$$rt_{ij} = \beta_0 + u_{0i} + \beta_1 \cdot \text{cond.cod}_{ij} + \varepsilon_{ij}$$
+
+with $u_{0i} \sim N(0, 150)$. Each subject now has their own intercept, drawn
+once and used for both observations from that subject. This creates the
+within-subjects dependency.
+
+## Part 3
+
+**Multiple trials per cell (same formula, more rows):**
+
+$$rt_{ijk} = \beta_0 + u_{0i} + \beta_1 \cdot \text{cond.cod}_{ij} + \varepsilon_{ijk}$$
+
+$k$ trials per (subject, condition) cell. The formula is unchanged; the index
+$k$ just enumerates trials. The nested `rep()` calls in the code align each
+subject's intercept with their $2k$ trials.
+
+## Part 4
+
+**+ random slope:**
+
+$$rt_{ij} = \beta_0 + u_{0i} + (\beta_1 + u_{1i}) \cdot \text{cond.cod}_{ij} + \varepsilon_{ij}$$
+
+with $u_{1i} \sim N(0, 20)$, drawn **independently** of $u_{0i}$. Each subject
+now also has their own slope — the size of the frequency effect varies across
+subjects.
+
+## Part 5
+
+**Correlated random intercepts and slopes:**
+
+$$rt_{ij} = \beta_0 + u_{0i} + (\beta_1 + u_{1i}) \cdot \text{cond.cod}_{ij} + \varepsilon_{ij}$$
+
+$$\begin{pmatrix} u_0 \\ u_1 \end{pmatrix} \sim \text{MVN}\left( \mathbf{0}, \, \Sigma_u \right), \quad \Sigma_u = \begin{pmatrix} \sigma_{u0}^2 & \rho \, \sigma_{u0} \sigma_{u1} \\ \rho \, \sigma_{u0} \sigma_{u1} & \sigma_{u1}^2 \end{pmatrix}$$
+
+The two random effects are now drawn from a **bivariate normal** controlled by
+the correlation $\rho$. With $\rho < 0$, slower subjects tend to show smaller
+effects.
+
+## Part 6
+
+**+ fully crossed design with item random intercept:**
+
+$$rt_{ij} = \beta_0 + u_{0i} + w_{0j} + (\beta_1 + u_{1i}) \cdot \text{cond.cod}_{ij} + \varepsilon_{ij}$$
+
+with $w_{0j} \sim N(0, \sigma_w)$. The item index $j$ now varies independently
+of the subject index $i$ (fully crossed) and each item has its own random
+intercept.
+
+## Part 7
+
+**Log-normal RT (positive, right-skewed):**
+
+$$\log(rt_{ij}) = \beta_0 + u_{0i} + w_{0j} + (\beta_1 + u_{1i}) \cdot \text{cond.cod}_{ij} + \varepsilon_{ij}$$
+
+All parameters now live on the **log scale** (so $b_0 \approx 6.59$ corresponds
+to $\exp(6.59) \approx 730$ ms). Back-transform individual predictions with
+`exp()`.
+
+## Part 8
+
+**Same generator as Part 7, iterated over a grid:**
+
+For each $(n, b_1)$ combination (first grid) or each $(n, k)$ combination
+(second grid):
+
+1. Generate `nsim` independent datasets with the Part 7 process.
+2. Fit the LMM and extract the $p$-value for the condition effect.
+3. Compute power as the proportion of $p < 0.05$.
+4. Wrap the result with a Clopper-Pearson 95% confidence interval.
+
+:::
+
+# Generator functions
+
+::: panel-tabset
+
+## Part 1 / 1.2
+
+```{r}
+#| label: gendat-part1
+#| echo: true
+#| eval: false
+
+betwsubj_simdat_ldt <- function(n = 10,
+                                mean_freq_high = 700,
+                                mean_freq_low  = 750,
+                                stdev     = 200) {
+  freq_high <- rnorm(n, mean = mean_freq_high, sd = stdev)
+  freq_low  <- rnorm(n, mean = mean_freq_low,  sd = stdev)
+  subj      <- 1:(2 * n)
+  cond      <- factor(rep(c("freq_high", "freq_low"), each = n))
+  cond.cod  <- ifelse(cond == "freq_high", -0.5, 0.5)
+  data.frame(subj = subj, cond = cond, cond.cod = cond.cod,
+             rt = c(freq_high, freq_low))
+}
+```
+
+Two independent `rnorm()` calls, one per condition. No within-subject
+dependency.
+
+## Part 2
+
+```{r}
+#| label: gendat-part2
+#| echo: true
+#| eval: false
+
+withinsubj_simdat <- function(n = 10,
+                              b0 = 725,
+                              b1 = 50,
+                              sigma_u0 = 150,
+                              sigma = 200) {
+  u0       <- round(rnorm(n, mean = 0, sd = sigma_u0))
+  cond.cod <- rep(c(-0.5, 0.5), each = n)
+  subj     <- rep(1:n, times = 2)
+  rt <- round(b0 +
+              rep(u0, times = 2) +              # subject adjustment in BOTH conds
+              b1 * cond.cod +
+              rnorm(2 * n, mean = 0, sd = sigma))
+  data.frame(subj = subj, cond.cod = cond.cod, rt = rt)
+}
+```
+
+The `rep(u0, times = 2)` trick is what creates the within-subjects dependency.
+
+## Part 3
+
+**No wrapper — extends Part 2 inline by repeating each subject `k` times:**
+
+```{r}
+#| label: gendat-part3
+#| echo: true
+#| eval: false
+
+n <- 20  # subjects
+k <- 20  # trials per condition
+
+cond.cod <- rep(c(-0.5, 0.5), each = n * k)
+subj     <- rep(rep(1:n, each = k), times = 2)
+sim_dat  <- data.frame(subj = subj, cond.cod = cond.cod)
+
+sim_dat$rt <- 725 +
+              rep(rep(round(rnorm(n, 0, 150)), each = k), 2) + # subject random intercept
+              50 * cond.cod +                                  # condition effect
+              rnorm(n * k * 2, 0, 200)                         # residual
+```
+
+The nested `rep(rep(..., each = k), 2)` aligns each subject's intercept across
+their $2k$ trials.
+
+## Part 4
+
+```{r}
+#| label: gendat-part4
+#| echo: true
+#| eval: false
+
+gendat_ldt <- function(n = 20, k = 20,
+                       b0 = 725, b1 = 50,
+                       sigma_u0 = 150, sigma_u1 = 20,
+                       sigma = 200) {
+  u <- data.frame(subject = 1:n,
+                  u0 = rnorm(n, 0, sigma_u0),
+                  u1 = rnorm(n, 0, sigma_u1))
+  cond.cod <- rep(c(-0.5, 0.5), each = n * k)
+  subj     <- rep(rep(1:n, each = k), times = 2)
+  sim_dat  <- data.frame(subj = subj, cond.cod = cond.cod)
+  nrows <- dim(sim_dat)[1]
+  rt    <- rep(NA, nrows)
+  for (i in 1:nrows) {
+    rt[i] <- b0 +
+             u[sim_dat[i, ]$subj, ]$u0 +
+             (b1 + u[sim_dat[i, ]$subj, ]$u1) * sim_dat[i, ]$cond.cod +
+             rnorm(1, 0, sigma)
+  }
+  sim_dat$rt <- rt
+  sim_dat
+}
+```
+
+The `u` data frame holds one row per subject. The row-by-row loop looks up
+each subject's adjustments via `u[sim_dat[i, ]$subj, ]`.
+
+## Part 5
+
+```{r}
+#| label: gendat-part5
+#| echo: true
+#| eval: false
+
+gendat_ldt_corr <- function(n = 20, k = 20,
+                            b0 = 725, b1 = 50,
+                            sigma_u0 = 150, sigma_u1 = 20,
+                            rho = -0.5,                          # NEW
+                            sigma = 200) {
+  Sigma <- matrix(c(sigma_u0^2,                  sigma_u0 * sigma_u1 * rho,
+                    sigma_u0 * sigma_u1 * rho,   sigma_u1^2), ncol = 2)
+  u <- as.data.frame(mvrnorm(n = n, mu = c(0, 0), Sigma = Sigma))
+  colnames(u) <- c("u0", "u1"); u$subject <- 1:n
+  cond.cod <- rep(c(-0.5, 0.5), each = n * k)
+  subj     <- rep(rep(1:n, each = k), times = 2)
+  sim_dat  <- data.frame(subj = subj, cond.cod = cond.cod)
+  nrows <- dim(sim_dat)[1]; rt <- rep(NA, nrows)
+  for (i in 1:nrows) {
+    rt[i] <- b0 + u[sim_dat[i, ]$subj, ]$u0 +
+             (b1 + u[sim_dat[i, ]$subj, ]$u1) * sim_dat[i, ]$cond.cod +
+             rnorm(1, 0, sigma)
+  }
+  sim_dat$rt <- rt; sim_dat
+}
+```
+
+The two independent `rnorm()` calls from Part 4 collapse into one
+`mvrnorm()` call controlled by the variance-covariance matrix.
+
+## Part 6
+
+```{r}
+#| label: gendat-part6
+#| echo: true
+#| eval: false
+
+gendat_ldt_crossed <- function(n = 20, k = 20,
+                               b0 = 725, b1 = 50,
+                               sigma_u0 = 150, sigma_u1 = 20, rho = -0.5,
+                               sigma_w = 100,                       # NEW: item SD
+                               sigma = 200) {
+  sim_dat          <- expand.grid(item = 1:(k*2), subj = 1:n)        # fully crossed
+  sim_dat$cond.cod <- rep(c(-0.5, 0.5), each = k)
+  Sigma_u <- matrix(c(sigma_u0^2,                  rho * sigma_u0 * sigma_u1,
+                      rho * sigma_u0 * sigma_u1,   sigma_u1^2), nrow = 2)
+  u <- mvrnorm(n = length(unique(sim_dat$subj)), mu = c(0, 0), Sigma = Sigma_u)
+  w <- rnorm(n = length(unique(sim_dat$item)), mean = 0, sd = sigma_w) # NEW: item RE
+  N <- dim(sim_dat)[1]; rt <- rep(NA, N)
+  for (i in 1:N) {
+    rt[i] <- rnorm(1,
+                   b0 + u[sim_dat[i, ]$subj, 1] + w[sim_dat[i, ]$item] +
+                   (b1 + u[sim_dat[i, ]$subj, 2]) * sim_dat[i, ]$cond.cod,
+                   sigma)
+  }
+  sim_dat$rt <- rt
+  sim_dat$subj <- factor(sim_dat$subj); sim_dat$item <- factor(sim_dat$item)
+  sim_dat
+}
+```
+
+`expand.grid()` builds the fully crossed design (every subject sees every
+item). The new `w` vector adds one random intercept per item.
+
+## Part 7
+
+```{r}
+#| label: gendat-part7
+#| echo: true
+#| eval: false
+
+gendat_ldt_crossed_log <- function(n = 20, k = 20,
+                                   b0 = 6.59,                # log scale
+                                   b1 = 0.10,                # log scale
+                                   sigma_u0 = 0.2, sigma_u1 = 0.02, rho = -0.5,
+                                   sigma_w = 0.1,
+                                   sigma = 0.25) {           # all on log scale
+  sim_dat          <- expand.grid(item = 1:(k*2), subj = 1:n)
+  sim_dat$cond.cod <- rep(c(-0.5, 0.5), each = k)
+  Sigma_u <- matrix(c(sigma_u0^2,                  rho * sigma_u0 * sigma_u1,
+                      rho * sigma_u0 * sigma_u1,   sigma_u1^2), nrow = 2)
+  u <- mvrnorm(n = length(unique(sim_dat$subj)), mu = c(0, 0), Sigma = Sigma_u)
+  w <- rnorm(n = length(unique(sim_dat$item)), mean = 0, sd = sigma_w)
+  N <- dim(sim_dat)[1]; rt <- rep(NA, N)
+  for (i in 1:N) {
+    rt[i] <- rlnorm(1,                                       # rlnorm() not rnorm()
+                    b0 + u[sim_dat[i, ]$subj, 1] + w[sim_dat[i, ]$item] +
+                    (b1 + u[sim_dat[i, ]$subj, 2]) * sim_dat[i, ]$cond.cod,
+                    sigma)
+  }
+  sim_dat$rt <- rt
+  sim_dat$subj <- factor(sim_dat$subj); sim_dat$item <- factor(sim_dat$item)
+  sim_dat
+}
+```
+
+Only one structural change from Part 6: `rnorm()` becomes `rlnorm()`. All the
+parameters are interpreted on the **log scale** instead of the millisecond
+scale.
+
+## Part 8
+
+**Same generator as Part 7. The new code is the nested grid loop that wraps
+the generator:**
+
+```{r}
+#| label: gendat-part8
+#| echo: true
+#| eval: false
+
+# first grid: subjects x effect size
+for (row in 1:nrow(power_grid)) {
+  n_subj <- power_grid$n[row]
+  effect <- power_grid$b1[row]
+  pvals  <- rep(NA, nsim)
+
+  for (i in 1:nsim) {
+    sim_dat <- gendat_ldt_crossed_log(n = n_subj, k = n_item, b1 = effect, ...)
+    m <- lmer(log(rt) ~ cond.cod + (1 + cond.cod | subj) + (1 | item), sim_dat,
+              control = lmerControl(calc.derivs = FALSE))
+    pvals[i] <- summary(m)$coefficients[2, 5]
+  }
+
+  power_grid$power[row] <- mean(pvals < 0.05)
+}
+```
+
+Two nested loops: the outer iterates over rows of the grid, the inner runs
+`nsim` simulations and records $p$-values.
+
+:::
+
+# Summary
+
+Three things to notice as you flick through the tabs:
+
+- **Additive structure.** Every formula contains all the previous ones inside.
+  Each tab adds exactly one new ingredient (a new random effect, a new
+  correlation, a new transformation).
+- **Function names track complexity.** From `betwsubj_simdat_ldt()` (Part 1) to
+  `gendat_ldt_crossed_log()` (Part 7), the name accumulates suffixes
+  (`_corr`, `_crossed`, `_log`) as each new piece is added.
+- **The `lmer()` formula grows in lock-step.** Starting from
+  `lm(rt ~ cond.cod)` and ending at
+  `lmer(log(rt) ~ cond.cod + (1 + cond.cod | subj) + (1 | item))`. The
+  match between the generative process and the analysis model is what makes
+  the power estimates honest.
+
+# Session information
+
+```{r}
+#| label: session-info
+#| echo: false
+#| eval: true
+#| code-fold: true
+
+sessionInfo()
+```

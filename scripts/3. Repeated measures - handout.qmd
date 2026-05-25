@@ -1,0 +1,235 @@
+---
+title: "Simulation-Based Power Analysis"
+subtitle: "Part 3: Repeated measures — Handout"
+author:
+  - name: "Filip Andras, David López-García & David Sánchez Casasola"
+    affiliations:
+      - name: "Centro de Investigación Mente Cerebro y Comportamiento (CIMCYC), Universidad de Granada"
+date: "26 May 2026"
+date-format: "D MMMM YYYY"
+format:
+  html:
+    theme: cosmo
+    toc: true
+    toc-location: left
+    toc-depth: 3
+    embed-resources: true
+    code-fold: false
+    code-overflow: wrap
+    code-tools: false
+    fig-align: center
+    number-sections: true
+    page-layout: full
+    include-in-header:
+      - text: |
+          <style>
+            pre { white-space: pre-wrap; word-wrap: break-word; }
+            .quarto-title-block { max-width: 1200px; margin: auto; padding: 0 2em; }
+            main, #quarto-document-content { max-width: 1200px; margin: auto; padding: 0 2em; }
+            h2 { margin-top: 2em; }
+            h3 { margin-top: 1.5em; }
+            #TOC, #quarto-margin-sidebar { width: 250px; }
+          </style>
+execute:
+  warning: false
+  message: false
+---
+
+```{r}
+#| label: setup
+#| echo: false
+#| eval: true
+
+# load packages (suppress startup messages from lme4, lmerTest, etc.)
+suppressPackageStartupMessages({
+  library(tictoc)
+  library(MASS)
+  library(lme4)
+  library(lmerTest)
+  library(ggplot2)
+})
+
+options(scipen = 999) # prevents scientific notation
+options(width = 120)  # wider console output for HTML rendering
+set.seed(42)          # set seed for reproducibility
+```
+
+# From one observation per condition to many
+
+Part 2 simulated within-subjects data with **one observation per subject per
+condition**: each person contributed two RTs, one high-frequency and one
+low-frequency.
+
+In reality, cognitive experiments collect many trials per condition per subject.
+A typical lexical-decision task might include 20 high-frequency words and 20
+low-frequency words per participant.
+
+This part of the course generalises the data-generating process to **multiple
+repeated measures per condition per subject**. The random-intercept idea from
+Part 2 carries over directly; we just need to be careful with how we replicate
+the subject-level structure.
+
+# Building the design matrix
+
+For 20 subjects $\times$ 20 trials per condition $\times$ 2 conditions, the data
+frame has $20 \times 20 \times 2 = 800$ rows. The condition vector has to be made
+$n \times k$ times long for each condition. The subject vector has to repeat each
+subject id $k$ times for one condition, and then the whole vector has to be
+repeated twice for the two conditions.
+
+```{r}
+#| label: build-repeated-measures-design
+#| echo: true
+#| eval: true
+
+n <- 20  # subjects
+k <- 20  # 20 observations per condition (40 trials per subject in total)
+
+# condition vector: each condition repeated n * k times
+cond.cod <- rep(c(-0.5, 0.5), each = n * k)
+
+# subject vector: each of the n subject ids repeated k times,
+# then the whole vector repeated twice (once per condition):
+subj <- rep(rep(1:n, each = k), times = 2)
+
+# put it together:
+sim_dat <- data.frame(
+  subj     = subj,
+  cond.cod = cond.cod
+)
+```
+
+Sanity checks:
+
+```{r}
+#| label: check-dim-sim-dat
+#| echo: true
+#| eval: true
+
+dim(sim_dat) # should be 800 x 2
+```
+
+The cross-tabulation confirms that every subject has 20 observations in each of
+the two conditions:
+
+```{r}
+#| label: xtabs-subj-by-cond
+#| echo: true
+#| eval: true
+
+xtabs(~ subj + cond.cod, sim_dat)
+```
+
+# Generating the response times
+
+To extend the Part 2 generative formula to multiple trials per condition, the
+by-subject intercept adjustment ($u_{0i}$) has to be **repeated $k$ times** for
+each subject and then twice (once per condition):
+
+```{r}
+#| label: generate-rt-repeated-measures
+#| echo: true
+#| eval: true
+
+# previously (Part 2: one trial per condition per subject):
+subject_adj <- round(rnorm(n, mean = 0, sd = 150))
+# rt <- 725 + rep(subject_adj, times = 2) + 50 * cond.cod + rnorm(2 * n, 0, 200)
+
+# now (Part 3: k trials per condition per subject):
+sim_dat$rt <- 725 +
+              rep(rep(round(rnorm(n, 0, 150)), each = k), times = 2) + # subject adjustments
+              50 * cond.cod +                                          # condition effect
+              rnorm(n * k * 2, 0, 200)                                 # residual error
+```
+
+The nested `rep(rep(..., each = k), times = 2)` is the key change:
+
+- The inner `rep(..., each = k)` says "each subject's adjustment is repeated $k$
+  times" (one value per trial).
+- The outer `rep(..., times = 2)` says "the whole pattern is then repeated twice
+  for the two conditions".
+
+Without this nested structure the subject adjustments would not be aligned with
+the right rows of `sim_dat`.
+
+# Fitting the random-intercept model
+
+With multiple trials per condition per subject, the paired t-test is no longer
+applicable. We need the linear mixed-effects model with a by-subject random
+intercept:
+
+```{r}
+#| label: lmer-varying-intercepts-m2
+#| echo: true
+#| eval: true
+
+m2 <- lmer(rt ~ cond.cod + (1 | subj), sim_dat,
+           control = lmerControl(calc.derivs = FALSE))
+summary(m2)
+```
+
+The `(1 | subj)` term has the same meaning as in Part 2: each subject has their
+own intercept drawn from a normal distribution centred on the grand mean. The
+only difference is that now each subject contributes $2k = 40$ trials instead of
+just 2.
+
+# A first look at varying slopes
+
+If we suspect that the lexical-frequency effect itself varies across subjects —
+that is, some people show a bigger effect than others — we can fit a model that
+allows **both** the intercept and the slope to vary by subject:
+
+```{r}
+#| label: lmer-varying-slopes-m3
+#| echo: true
+#| eval: true
+
+m3 <- lmer(rt ~ cond.cod + (1 + cond.cod | subj), sim_dat,
+           control = lmerControl(calc.derivs = FALSE))
+summary(m3)
+```
+
+The new `(1 + cond.cod | subj)` term says "each subject has their own intercept
+*and* their own slope, correlated with each other".
+
+::: callout-warning
+**Look at the correlation between intercept and slope in the random-effects
+section.** If you see a correlation of -1 or +1, the model is **overparameterized**
+— there is not enough information in the data to estimate the correlation
+properly.
+
+This is exactly what we see here. The reason is that we generated the data
+**without** by-subject slope variability: the slope was a constant 50 ms for every
+subject. The model is trying to estimate a correlation between intercept and a
+slope that does not vary, which is mathematically ill-defined.
+:::
+
+The fix is to add by-subject slope variability to the data-generating process,
+which is the topic of Part 4.
+
+# Summary and next step
+
+So far in this part we have:
+
+- Extended the within-subjects design to **multiple trials per condition per
+  subject**, the realistic case in cognitive experiments.
+- Built the design matrix with nested `rep()` calls so that each subject's
+  intercept adjustment aligns with their $2k$ trials.
+- Fit the by-subject random-intercept LMM with `lmer(rt ~ cond.cod + (1 | subj))`.
+- Tried a varying-slopes model and saw a $\pm 1$ intercept-slope correlation —
+  the diagnostic signal that our generative process is missing slope variability.
+
+The next part of the course **adds by-subject adjustments to the slope** to the
+data-generating process, so the model is no longer trying to estimate a phantom
+correlation.
+
+# Session information
+
+```{r}
+#| label: session-info
+#| echo: false
+#| eval: true
+#| code-fold: true
+
+sessionInfo()
+```

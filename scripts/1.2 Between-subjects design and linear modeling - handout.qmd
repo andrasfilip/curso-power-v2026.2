@@ -1,0 +1,298 @@
+---
+title: "Simulation-Based Power Analysis"
+subtitle: "Part 1.2: Between-subject design and introduction to linear modeling — Handout"
+author:
+  - name: "Filip Andras, David López-García & David Sánchez Casasola"
+    affiliations:
+      - name: "Centro de Investigación Mente Cerebro y Comportamiento (CIMCYC), Universidad de Granada"
+date: "26 May 2026"
+date-format: "D MMMM YYYY"
+format:
+  html:
+    theme: cosmo
+    toc: true
+    toc-location: left
+    toc-depth: 3
+    embed-resources: true
+    code-fold: false
+    code-overflow: wrap
+    code-tools: false
+    fig-align: center
+    number-sections: true
+    page-layout: full
+    include-in-header:
+      - text: |
+          <style>
+            pre { white-space: pre-wrap; word-wrap: break-word; }
+            .quarto-title-block { max-width: 1200px; margin: auto; padding: 0 2em; }
+            main, #quarto-document-content { max-width: 1200px; margin: auto; padding: 0 2em; }
+            h2 { margin-top: 2em; }
+            h3 { margin-top: 1.5em; }
+            #TOC, #quarto-margin-sidebar { width: 250px; }
+          </style>
+execute:
+  warning: false
+  message: false
+---
+
+```{r}
+#| label: setup
+#| echo: false
+#| eval: true
+
+# load packages (suppress startup messages from lme4, lmerTest, etc.)
+suppressPackageStartupMessages({
+  library(tictoc)
+  library(MASS)
+  library(lme4)
+  library(lmerTest)
+  library(ggplot2)
+})
+
+options(scipen = 999) # prevents scientific notation
+options(width = 120)  # wider console output for HTML rendering
+set.seed(42)          # set seed for reproducibility
+```
+
+# Why linear models?
+
+Part 1 introduced power analysis using independent-samples t-tests. This part
+generalises the same logic to the **linear model framework**, which underlies most
+modern statistical analyses in cognitive science and psycholinguistics.
+
+Linear models are worth learning because they are a flexible framework that goes
+beyond simple comparisons of means. In particular:
+
+- They handle factorial designs and continuous predictors with the same syntax.
+- They extend naturally to **linear mixed-effects models (LMEMs)** for
+  repeated-measures and hierarchical data.
+- They handle unbalanced data and missing observations without resorting to
+  listwise deletion.
+- They extend again to **generalised linear models (GLMs)** for non-Gaussian
+  outcomes (accuracy, counts, etc.).
+- The transition to Bayesian modeling is more straightforward when you already
+  think in terms of linear models.
+
+But the most important reason for this course is pedagogical. Linear models let us
+walk through a real-life power analysis example where **analytical solutions are
+not available** and where standard software like G*Power falls short.
+
+A lot of courses end with "for a more complex design use simulations" but never
+show you how. This course closes that gap.
+
+The flip side of this flexibility is that **the data-generating process is highly
+specific to your design**. There is no universal recipe — you have to know your
+data well enough to specify how it is generated.
+
+That responsibility is also the main intellectual payoff. By the time you finish
+a simulation-based power analysis you understand your design better than any
+analytical shortcut would have told you.
+
+# Basic terminology
+
+A simple linear model takes the form:
+
+$$
+y = \beta_0 + \beta_1 \cdot x + \epsilon
+$$
+
+where:
+
+- **$y$** is the response (dependent) variable.
+- **$\beta_0$** is the intercept (*intercepto*).
+- **$\beta_1$** is the slope (*pendiente*).
+- **$x$** is the predictor (independent variable).
+- **$\epsilon$** is the residual error, $\epsilon \sim \text{Normal}(0, \sigma)$.
+
+## Mapping to our LDT example
+
+In the lexical-decision-task example from Part 1, the parameters map as follows:
+
+- $\beta_0$ (intercept) = mean response time across both conditions = **725 ms**.
+- $\beta_1$ (slope) = difference between conditions = **50 ms**.
+- $x$ = condition (lexical frequency), coded as -0.5 / +0.5.
+
+The predicted response times are:
+
+- High lexical frequency: $725 + 50 \cdot (-0.5) = 700$ ms.
+- Low lexical frequency: $725 + 50 \cdot (+0.5) = 750$ ms.
+
+In this course we always code the condition as **-0.5 / +0.5** (called *effects
+coding*). The intercept is the grand mean across both groups and the slope is the
+**full** difference between conditions. This is convenient for power analysis: the
+slope parameter directly equals the effect size you are trying to detect, with no
+factor-of-2 adjustment.
+
+R has other coding schemes (treatment 0/1, sum-to-zero -1/+1) that change the
+interpretation of intercept and slope, but they all describe the same data and give
+the same inferential conclusions. We stick with -0.5 / +0.5 throughout.
+
+```{r}
+#| label: redefine-betwsubj-simdat-ldt
+#| echo: false
+#| eval: true
+
+# Re-define the data simulation function from Part 1 (uses -0.5 / +0.5 effects coding)
+betwsubj_simdat_ldt <- function(n = 10,
+                                mean_freq_high = 700,
+                                mean_freq_low  = 750,
+                                stdev     = 200) {
+  freq_high <- rnorm(n, mean = mean_freq_high, sd = stdev)
+  freq_low  <- rnorm(n, mean = mean_freq_low,  sd = stdev)
+  subj     <- 1:(2 * n)
+  cond     <- factor(rep(c("freq_high", "freq_low"), each = n))
+  cond.cod <- ifelse(cond == "freq_high", -0.5, 0.5)
+  sim_dat  <- data.frame(
+    subj     = subj,
+    cond     = cond,
+    cond.cod = cond.cod,
+    rt       = c(freq_high, freq_low)
+  )
+}
+```
+
+# Fitting the linear model
+
+With the function from Part 1, we generate one simulated dataset and fit the linear
+model:
+
+```{r}
+#| label: lm-summary-tval
+#| echo: true
+#| eval: true
+
+sim_dat <- betwsubj_simdat_ldt()
+m0 <- lm(rt ~ cond.cod, sim_dat)
+summary(m0)
+```
+
+In the summary, the `(Intercept)` row is the estimate of $\beta_0$ (grand mean) and
+the `cond.cod` row is the estimate of $\beta_1$ (the condition effect). With n = 10
+per group, both estimates are noisy — we will see this in the parameter-recovery
+section below.
+
+# Power analysis with the linear model
+
+The simulation logic from Part 1 works identically — only the analysis step
+changes. The skeleton:
+
+```{r}
+#| label: power-loop-skeleton
+#| echo: true
+#| eval: true
+
+nsim  <- 10000          # number of simulations
+pvals <- rep(NA, nsim)  # vector to store p-values
+
+for (i in 1:nsim) {
+                                          # 1. generate a simulated dataset
+                                          # 2. fit the linear model
+                                          # 3. extract the p-value for the condition effect
+}
+                                          # 4. count the proportion of p-values less than 0.05
+```
+
+And the filled-in version:
+
+```{r}
+#| label: power-simulation-lm
+#| echo: true
+#| eval: true
+
+nsim  <- 10000
+pvals <- rep(NA, nsim)
+
+for (i in 1:nsim) {
+  sim_dat  <- betwsubj_simdat_ldt()          # 1. simulate a dataset
+  m0       <- lm(rt ~ cond.cod, sim_dat)     # 2. fit the linear model
+  pvals[i] <- summary(m0)$coefficients[2, 4] # 3. extract the p-value for the slope
+}
+
+round(mean(pvals < 0.05), 3)                 # 4. proportion of p < 0.05
+```
+
+The estimated power should match the t-test result from Part 1 (around 7% for n = 10
+per group with a 50 ms effect and SD = 200 ms), because the t-test and linear-model
+test are mathematically equivalent.
+
+# Parameter recovery
+
+A separate question, complementary to power, is whether the model can in principle
+**recover the true parameter values** under repeated sampling. This is called
+*parameter recovery*. If the model cannot recover the parameters even with infinite
+data, the power analysis is moot.
+
+```{r}
+#| label: parameter-recovery-lm
+#| echo: true
+#| eval: true
+
+nsim   <- 1000
+params <- matrix(rep(NA, nsim * 3), ncol = 3) # 3 parameters: intercept, slope, residual SD
+
+for (i in 1:nsim) {
+  sim_dat        <- betwsubj_simdat_ldt()
+  m              <- lm(rt ~ cond.cod, sim_dat)
+  params[i, 1:2] <- summary(m)$coefficients[, 1] # intercept and slope
+  params[i, 3]   <- summary(m)$sigma             # residual SD
+}
+```
+
+We can visualise the distribution of recovered parameters and overlay the true values
+(in red) used in the data-generating process:
+
+```{r}
+#| label: fig-parameter-recovery-hist
+#| echo: false
+#| eval: true
+#| fig-cap: "Parameter recovery for the simple linear model with n = 10 per group, 1000 simulations. Red lines show the true values used to generate the data."
+
+op <- par(mfrow = c(1, 3), pty = "s")
+hist(params[, 1], main = "b0 (intercept)", col = "lightblue")
+abline(v = 725, col = "red", lwd = 2)
+hist(params[, 2], main = "b1 (slope)", col = "lightblue")
+abline(v = 50, col = "red", lwd = 2)
+hist(params[, 3], main = "sd residuals", col = "lightblue")
+abline(v = 200, col = "red", lwd = 2)
+par(op)
+```
+
+The histograms are centred on the true values. The model gives us **accurate
+estimates of the true parameters under repeated sampling**, although they are noisy
+(the slope distribution is especially wide because n = 10 is small).
+
+Raising the number of subjects would tighten the distributions — that is precisely
+the parameter recovery story behind power analysis. Later in the course we will see
+designs where parameter recovery fails even with large n.
+
+# Summary and next step
+
+So far we have learned to perform power analysis using simulations with the
+independent-samples t-test and the simple linear model. We have seen that the two
+approaches give equivalent results for the between-subjects design, and we have
+introduced parameter recovery as a complementary diagnostic.
+
+The next part of the course generalises this approach to **within-subjects designs**,
+where each subject contributes data to both conditions and we have to model the
+dependency between observations explicitly.
+
+This is where the linear-model framework really starts to pay off. Paired t-tests
+can handle the simplest case, but linear mixed-effects models scale naturally to
+designs with many repeated measures, items, and random effects.
+
+# Further reading
+
+- Brown, V. A. (2021). An introduction to linear mixed-effects modeling in R.
+  *Advances in Methods and Practices in Psychological Science*, 4(1),
+  2515245920960351.
+
+# Session information
+
+```{r}
+#| label: session-info
+#| echo: false
+#| eval: true
+#| code-fold: true
+
+sessionInfo()
+```

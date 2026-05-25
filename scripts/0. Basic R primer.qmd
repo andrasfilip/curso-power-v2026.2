@@ -1,0 +1,574 @@
+---
+title: "Simulation-Based Power Analysis"
+subtitle: "Part 0: R básico — primer para los que no usan R con frecuencia"
+author:
+  - name: "Filip Andras, David López-García & David Sánchez Casasola"
+    affiliations:
+      - name: "Centro de Investigación Mente Cerebro y Comportamiento (CIMCYC), Universidad de Granada"
+date: "26 May 2026"
+date-format: "D MMMM YYYY"
+format:
+  html:
+    theme: cosmo
+    toc: true
+    toc-location: left
+    toc-depth: 3
+    embed-resources: true
+    code-fold: false
+    code-overflow: wrap
+    code-tools: false
+    fig-align: center
+    number-sections: true
+    page-layout: full
+    include-in-header:
+      - text: |
+          <style>
+            pre { white-space: pre-wrap; word-wrap: break-word; }
+            .quarto-title-block { max-width: 1200px; margin: auto; padding: 0 2em; }
+            main, #quarto-document-content { max-width: 1200px; margin: auto; padding: 0 2em; }
+            h2 { margin-top: 2em; }
+            h3 { margin-top: 1.5em; }
+            #TOC, #quarto-margin-sidebar { width: 250px; }
+          </style>
+execute:
+  warning: false
+  message: false
+---
+
+::: callout-tip
+**¿Para quién es este documento?** Para quienes no usan R con frecuencia y
+necesitan un repaso antes de empezar el curso. Si ya manejas variables,
+vectores, data frames y la consola de RStudio, puedes saltar directamente a
+la Parte 1.
+:::
+
+# La consola y el entorno
+
+La **consola R** es la interfaz interactiva donde se escriben y ejecutan
+comandos. Los resultados aparecen justo debajo del comando.
+
+El **environment** es el espacio de trabajo donde se almacenan los objetos que
+creas durante la sesión (variables, funciones, datos). En RStudio lo verás
+arriba a la derecha — cada vez que asignes algo a un nombre, aparece allí.
+
+Lo que estás leyendo es un documento Quarto. Dentro de él hay **chunks de
+código** que se ejecutan al hacer clic en el botón verde (▶) o con
+`Cmd + Enter` (Mac) / `Ctrl + Enter` (Windows/Linux).
+
+# Variables
+
+Una variable es simplemente un **nombre que apunta a un valor**. Se crea
+asignando un valor a un nombre con el operador `<-`:
+
+```{r}
+#| label: var-x
+#| echo: true
+#| eval: true
+
+# Esto crea una variable llamada "x" que contiene el valor 10
+x <- 10
+
+# Para mostrar el valor que contiene, basta con escribir su nombre:
+x
+```
+
+Puedes reasignar el valor de una variable cuando quieras — el último valor
+asignado es el que queda:
+
+```{r}
+#| label: var-nsim
+#| echo: true
+#| eval: true
+
+nsim <- 10000   # primer valor
+nsim <- 1000    # lo sobrescribimos
+
+nsim            # ahora vale 1000
+```
+
+::: callout-note
+**Atajo en RStudio**: `Option + -` (Mac) o `Alt + -` (Windows/Linux) inserta
+`<-` automáticamente.
+:::
+
+# Vectores
+
+Un **vector** es una secuencia de elementos del mismo tipo (números,
+caracteres o valores lógicos). Se crea con la función `c()` (de *concatenate*):
+
+```{r}
+#| label: vec-basic
+#| echo: true
+#| eval: true
+
+mi_vector <- c(1, 2, 3, 4, 5)
+mi_vector
+```
+
+R tiene funciones para resumir un vector. Algunas que usaremos mucho:
+
+::: panel-tabset
+
+## `mean()`
+
+```{r}
+#| label: vec-mean
+#| echo: true
+#| eval: true
+
+mean(mi_vector)
+```
+
+## `sd()`
+
+```{r}
+#| label: vec-sd
+#| echo: true
+#| eval: true
+
+sd(mi_vector)
+```
+
+## `length()`
+
+```{r}
+#| label: vec-length
+#| echo: true
+#| eval: true
+
+length(mi_vector)
+```
+
+:::
+
+## Repetir un vector con `rep()`
+
+```{r}
+#| label: vec-rep-times
+#| echo: true
+#| eval: true
+
+mi_vector_repetido <- rep(mi_vector, times = 2)
+mi_vector_repetido
+```
+
+El argumento `each` repite cada elemento individualmente en lugar de la
+secuencia completa — comparemos:
+
+::: panel-tabset
+
+## `times = 2`
+
+```{r}
+#| label: vec-rep-times-demo
+#| echo: true
+#| eval: true
+
+rep(c("a", "b", "c"), times = 2)
+# repite la secuencia completa dos veces: a b c a b c
+```
+
+## `each = 2`
+
+```{r}
+#| label: vec-rep-each-demo
+#| echo: true
+#| eval: true
+
+rep(c("a", "b", "c"), each = 2)
+# repite cada elemento dos veces: a a b b c c
+```
+
+:::
+
+## Crear un vector vacío
+
+A veces necesitamos un vector vacío que rellenaremos dentro de un bucle. La
+forma estándar:
+
+```{r}
+#| label: vec-empty
+#| echo: true
+#| eval: true
+
+vector_vacio <- rep(NA, nsim)   # nsim posiciones todas con valor NA
+
+head(vector_vacio)              # muestra los primeros 6 elementos
+length(vector_vacio)            # verifica que tiene nsim elementos
+```
+
+# Data frames
+
+Un **data frame** es como una tabla: tiene filas (observaciones) y columnas
+(variables). Es la estructura más común para almacenar datos en R.
+
+Para construir uno desde cero, primero creamos los vectores que serán las
+columnas:
+
+```{r}
+#| label: df-build-vectors
+#| echo: true
+#| eval: true
+
+# Vector de IDs de sujetos: del 1 al 20
+subj <- 1:20
+
+# Vector con las dos condiciones del experimento:
+condicion <- c("control", "tratamiento")
+
+# Para que cada sujeto aparezca en una condición, repetimos cada una 10 veces:
+condicion_repetida <- rep(condicion, each = 10)
+condicion_repetida
+```
+
+Ahora juntamos los vectores en un data frame con `data.frame()`:
+
+```{r}
+#| label: df-build
+#| echo: true
+#| eval: true
+
+dat <- data.frame(subj      = subj,
+                  condicion = condicion_repetida)
+
+dat
+```
+
+## Acceder a columnas con `$`
+
+Para acceder a una columna específica de un data frame, se usa el operador
+`$`:
+
+```{r}
+#| label: df-dollar
+#| echo: true
+#| eval: true
+
+dat$subj         # toda la columna subj
+dat$condicion    # toda la columna condicion
+```
+
+## Crear una columna nueva
+
+La forma más directa: asignar un vector nuevo a un nombre que aún no existe.
+La función `ifelse()` es útil para crear columnas según una condición:
+
+```{r}
+#| label: df-new-column
+#| echo: true
+#| eval: true
+
+# Si la condición es "control", asigna -0.5; si no, asigna +0.5
+dat$cond.cod <- ifelse(dat$condicion == "control", -0.5, 0.5)
+
+head(dat)
+```
+
+## Verificar el diseño con `xtabs()`
+
+`xtabs()` cuenta cuántas observaciones hay en cada combinación de variables —
+muy útil para verificar que un data frame tiene la estructura esperada:
+
+```{r}
+#| label: df-xtabs
+#| echo: true
+#| eval: true
+
+# ¿Cuántos sujetos hay en cada condición?
+xtabs(~ condicion, data = dat)
+
+# ¿Y por la combinación condición × cond.cod?
+xtabs(~ condicion + cond.cod, data = dat)
+```
+
+# Matrices
+
+Una **matriz** es una estructura bidimensional con filas y columnas, donde
+todos los elementos son del mismo tipo. Se crea con `matrix()`:
+
+```{r}
+#| label: mat-create
+#| echo: true
+#| eval: true
+
+mi_matriz <- matrix(c("a", "b", "c", "d", "e", "f"), ncol = 3)
+mi_matriz
+```
+
+## Acceder a elementos con `[fila, columna]`
+
+::: panel-tabset
+
+## Un elemento
+
+```{r}
+#| label: mat-element
+#| echo: true
+#| eval: true
+
+# Elemento en la primera fila, primera columna:
+mi_matriz[1, 1]
+
+# Elemento en la segunda fila, tercera columna:
+mi_matriz[2, 3]
+```
+
+## Toda una fila
+
+```{r}
+#| label: mat-row
+#| echo: true
+#| eval: true
+
+# Toda la primera fila (deja la columna en blanco):
+mi_matriz[1, ]
+```
+
+## Toda una columna
+
+```{r}
+#| label: mat-col
+#| echo: true
+#| eval: true
+
+# Toda la segunda columna (deja la fila en blanco):
+mi_matriz[, 2]
+```
+
+:::
+
+# Distribuciones aleatorias
+
+R tiene funciones para generar números aleatorios desde muchas distribuciones.
+Usaremos sobre todo dos en el curso:
+
+::: panel-tabset
+
+## Normal con `rnorm()`
+
+```{r}
+#| label: dist-rnorm
+#| echo: true
+#| eval: true
+#| fig-cap: "Histograma de 1.000.000 de tiempos de respuesta simulados desde una distribución normal con media 700 y SD 200. La línea roja marca la media teórica."
+#| fig-align: center
+
+# Genera un millón de tiempos de respuesta normalmente distribuidos
+tiempos_respuesta <- rnorm(1000000, mean = 700, sd = 200)
+
+hist(tiempos_respuesta, breaks = 100,
+     main = "Histograma de tiempos de respuesta",
+     xlab = "Tiempo de respuesta (ms)",
+     col  = "lightblue")
+
+# Línea vertical en la media teórica
+abline(v = 700, col = "red", lwd = 2)
+```
+
+## Log-normal con `rlnorm()`
+
+```{r}
+#| label: dist-rlnorm
+#| echo: true
+#| eval: true
+#| fig-cap: "Histograma de 1.000.000 de tiempos de respuesta simulados desde una distribución log-normal. Asimétrica a la derecha, con valores siempre positivos — más realista para tiempos de respuesta."
+#| fig-align: center
+
+# Genera un millón de tiempos de respuesta log-normalmente distribuidos
+tiempos_respuesta <- rlnorm(1000000, mean = 6.59, sd = 0.25)
+
+hist(tiempos_respuesta, breaks = 100,
+     main = "Histograma de tiempos de respuesta (log-normal)",
+     xlab = "Tiempo de respuesta (ms)",
+     col  = "lightblue")
+```
+
+:::
+
+::: callout-note
+La distribución normal puede generar valores negativos, lo cual es imposible
+para un tiempo de respuesta. La log-normal es **siempre positiva** y
+**asimétrica a la derecha** — más realista. Volveremos a esto en la Parte 7.
+:::
+
+## Reproducibilidad con `set.seed()`
+
+Los números aleatorios en R son **pseudo-aleatorios**: dada una semilla
+inicial, la secuencia es siempre la misma. Esto es muy útil porque te permite
+reproducir exactamente los mismos resultados.
+
+```{r}
+#| label: dist-seed
+#| echo: true
+#| eval: true
+
+set.seed(42)
+rnorm(5, mean = 0, sd = 1)
+```
+
+Si ejecutas la celda anterior dos veces (sin volver a llamar a `set.seed()`),
+obtendrás resultados distintos la segunda vez. Pero si llamas a
+`set.seed(42)` antes de cada llamada, siempre obtendrás los mismos cinco
+números. Verifícalo con tu compañero/a de al lado.
+
+# Ayuda integrada
+
+Para consultar la documentación de cualquier función:
+
+```{r}
+#| label: help
+#| echo: true
+#| eval: false
+
+help(rnorm)   # abre la ayuda de rnorm()
+?rnorm        # forma corta equivalente
+```
+
+La pestaña **Help** de RStudio se abrirá con los argumentos, ejemplos y
+detalles de la función.
+
+# Librerías (paquetes)
+
+R viene con muchas funciones de fábrica, pero las más interesantes están en
+**paquetes** que se instalan una sola vez y se cargan en cada sesión:
+
+```{r}
+#| label: pkg-install
+#| echo: true
+#| eval: false
+
+# Instalar ggplot2 (necesario solo la primera vez):
+install.packages("ggplot2")
+```
+
+```{r}
+#| label: pkg-load
+#| echo: true
+#| eval: true
+
+# Cargar ggplot2 (necesario cada vez que abres RStudio):
+library(ggplot2)
+```
+
+En la pestaña **Packages** de RStudio puedes ver qué paquetes están
+instalados y cuáles están cargados (la casilla marcada).
+
+::: callout-tip
+**Para este curso necesitarás instalar también estos paquetes** (una sola
+vez):
+
+```r
+install.packages(c("tictoc", "MASS", "lme4", "lmerTest",
+                   "rio", "performance", "ggdist", "dplyr"))
+```
+
+Y cargarlos al principio de cada sesión con `library()`.
+:::
+
+# RStudio: lo esencial
+
+::: panel-tabset
+
+## Directorio de trabajo
+
+El **directorio de trabajo** (working directory) es la carpeta donde R busca
+archivos por defecto:
+
+```{r}
+#| label: wd-getwd
+#| echo: true
+#| eval: true
+
+getwd()   # muestra el directorio actual
+```
+
+Si abres este curso con el archivo `.Rproj`, RStudio configura el directorio
+de trabajo automáticamente para ti. **Es la forma recomendada.**
+
+Si necesitas cambiarlo manualmente:
+
+```{r}
+#| label: wd-setwd
+#| echo: true
+#| eval: false
+
+# Cambia "/ruta/a/tu/carpeta" por la ruta real:
+setwd("/ruta/a/tu/carpeta/del/curso")
+
+# Verifica:
+getwd()
+```
+
+## Información de la sesión
+
+`sessionInfo()` muestra la versión de R y los paquetes cargados. Se suele
+poner al final de un script para dejar constancia del entorno usado:
+
+```{r}
+#| label: rstudio-session-info-demo
+#| echo: true
+#| eval: false
+
+sessionInfo()
+```
+
+Al final de este documento verás un ejemplo real (sección de Session
+information).
+
+## Atajos de teclado útiles
+
+| Atajo | Acción |
+|-------|--------|
+| `Option/Alt + -` | Inserta el operador de asignación `<-` |
+| `Cmd/Ctrl + Enter` | Ejecuta la línea actual o la selección |
+| `Cmd/Ctrl + Shift + C` | Comenta o descomenta líneas seleccionadas |
+| `Cmd/Ctrl + Shift + 0` | **Reinicia RStudio** (¡cuidado, pierdes todo el environment!) |
+| `Cmd/Ctrl + L` | Limpia la consola |
+| `Tab` | Autocompletar nombres de variables / funciones |
+
+:::
+
+## Símbolos clave del teclado
+
+En este curso usaremos mucho estos símbolos. Localízalos en tu teclado:
+
+- **`<-`**: operador de asignación
+- **`~`**: separador de fórmula (e.g., `y ~ x`)
+- **`|`**: barra vertical (para los efectos aleatorios en `lmer()`)
+- **`#`**: comienzo de un comentario
+
+::: callout-warning
+En teclados españoles, la barra vertical `|` suele estar en `Alt Gr + 1` o
+similar. Conviene practicarla antes de la sesión.
+:::
+
+# Diseño de paneles en RStudio
+
+RStudio tiene cuatro paneles. La configuración por defecto suele estar bien,
+pero puedes ajustarla en:
+
+> **Tools → Global Options → Pane Layout**
+
+Una configuración común es:
+
+- Arriba-izquierda: editor de scripts
+- Arriba-derecha: environment + history
+- Abajo-izquierda: consola
+- Abajo-derecha: files / plots / packages / help
+
+# Y ahora qué
+
+Si has llegado hasta aquí, ya tienes lo mínimo para seguir el curso. Las
+**ocho partes principales** (1, 1.2, 2-8) más el **recap** (Parte 9) te
+guiarán por el análisis de potencia mediante simulación paso a paso.
+
+# Session information
+
+```{r}
+#| label: session-info
+#| echo: false
+#| eval: true
+#| code-fold: true
+
+sessionInfo()
+```
